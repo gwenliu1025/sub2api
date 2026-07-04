@@ -295,7 +295,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		assert.True(t, strings.HasSuffix(etag, `"`))
 	})
 
-	t.Run("returns_304_for_matching_etag", func(t *testing.T) {
+	t.Run("returns_200_for_matching_etag_because_nonce_changes", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -306,7 +306,11 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		// Use a real router for proper 304 handling
 		router := gin.New()
 		router.Use(func(c *gin.Context) {
-			c.Set(middleware.CSPNonceKey, "test-nonce")
+			if c.GetHeader("If-None-Match") == "" {
+				c.Set(middleware.CSPNonceKey, "first-nonce")
+			} else {
+				c.Set(middleware.CSPNonceKey, "second-nonce")
+			}
 			c.Next()
 		})
 		router.Use(server.Middleware())
@@ -324,8 +328,11 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		req2.Header.Set("If-None-Match", etag)
 		router.ServeHTTP(w2, req2)
 
-		assert.Equal(t, http.StatusNotModified, w2.Code)
-		assert.Empty(t, w2.Body.String())
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assert.Equal(t, etag, w2.Header().Get("ETag"))
+		assert.Contains(t, w2.Body.String(), `nonce="second-nonce"`)
+		assert.NotContains(t, w2.Body.String(), `nonce="first-nonce"`)
+		assert.Equal(t, 1, provider.called)
 	})
 
 	t.Run("sets_cache_control_header", func(t *testing.T) {

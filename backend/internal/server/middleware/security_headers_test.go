@@ -138,17 +138,21 @@ func TestSecurityHeaders(t *testing.T) {
 		}
 		middleware := SecurityHeaders(cfg, nil)
 
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+		for _, path := range []string{"/api/v1/auth/me", "/v1/messages"} {
+			t.Run(path, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Request = httptest.NewRequest(http.MethodPost, path, nil)
 
-		middleware(c)
+				middleware(c)
 
-		assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-		assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
-		assert.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
-		assert.Empty(t, w.Header().Get("Content-Security-Policy"))
-		assert.Empty(t, GetNonceFromContext(c))
+				assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+				assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+				assert.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
+				assert.Empty(t, w.Header().Get("Content-Security-Policy"))
+				assert.Empty(t, GetNonceFromContext(c))
+			})
+		}
 	})
 
 	t.Run("csp_enabled_with_nonce_placeholder", func(t *testing.T) {

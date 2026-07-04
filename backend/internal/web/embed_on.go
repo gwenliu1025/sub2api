@@ -146,14 +146,8 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Check cache first
 	cached := s.cache.Get()
 	if cached != nil {
-		// Check If-None-Match for 304 response
-		if match := c.GetHeader("If-None-Match"); match == cached.ETag {
-			c.Status(http.StatusNotModified)
-			c.Abort()
-			return
-		}
-
-		// Replace nonce placeholder with actual nonce before serving
+		// The response body contains a per-request CSP nonce, so it cannot be
+		// served as 304 against a cached body with a different nonce.
 		content := replaceNoncePlaceholder(cached.Content, nonce)
 
 		c.Header("ETag", cached.ETag)
