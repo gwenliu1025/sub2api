@@ -101,6 +101,12 @@ services:
       - ANTIGRAVITY_USER_AGENT_VERSION=${ANTIGRAVITY_USER_AGENT_VERSION:-}
 
       # =======================================================================
+      # Update Configuration
+      # =======================================================================
+      - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
+      - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
+
+      # =======================================================================
       # Image Generation Stream & Concurrency
       # =======================================================================
       # OpenAI HTTP upstream protocol/timeout

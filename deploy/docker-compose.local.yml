@@ -149,6 +149,8 @@ services:
       # =======================================================================
       # Update Configuration (在线更新配置)
       # =======================================================================
+      # Repository for admin online updates
+      - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
       # Proxy for accessing GitHub (online updates + pricing data)
       # Examples: http://host:port, socks5://host:port
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
