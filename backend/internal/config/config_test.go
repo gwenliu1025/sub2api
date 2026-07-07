@@ -84,6 +84,19 @@ func TestValidateUpdateRepoRejectsInvalidOwner(t *testing.T) {
 	require.Contains(t, err.Error(), "owner/repo")
 }
 
+func TestValidateUpdateRepoRejectsWhitespaceInsideSlug(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Update.Repo = "gwenliu1025 /sub2api"
+	err = cfg.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "update.repo")
+	require.Contains(t, err.Error(), "owner/repo")
+}
+
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	viper.Reset()
 	t.Setenv("JWT_SECRET", "")

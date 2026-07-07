@@ -392,7 +392,7 @@ func validateGitHubRepoSlug(field, repo string) error {
 	}
 	owner := strings.TrimSpace(parts[0])
 	name := strings.TrimSpace(parts[1])
-	if !isGitHubOwnerSlug(owner) || !isGitHubRepoName(name) {
+	if owner != parts[0] || name != parts[1] || !isGitHubOwnerSlug(owner) || !isGitHubRepoName(name) {
 		return fmt.Errorf("%s must be in owner/repo format", field)
 	}
 	return nil
