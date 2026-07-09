@@ -88,6 +88,37 @@ node scripts/sub2api-admin.js accounts batch-clear-error --ids 40,39
 
 `bulk-update` 可覆盖页面“批量更新”的字段，payload 由后台表单字段决定，例如 `base_url`、`model_mapping`、`group_ids`、`proxy_id`、`concurrency`、`priority`、`rate_multiplier`、`status`、`compact_mode` 等。更新前先用 `accounts get <id>` 确认字段名。
 
+### Kiro equivalent cache billing
+
+Use only for self-owned Kiro accounts. Do not enable for external Kiro upstream accounts, and do not route `cloudflare-temp-email` through the relay network. Production entry machines are read-only for this workflow.
+
+Prefer `bulk-update` for this toggle because it merges `extra` keys. Single-account `accounts update --json '{"extra":{...}}'` replaces the entire `extra` object.
+
+Enable:
+
+```bash
+node scripts/sub2api-admin.js accounts list --search '<kiro-account-name>' --page-size 20
+node scripts/sub2api-admin.js accounts get <account-id>
+node scripts/sub2api-admin.js accounts bulk-update --ids <account-id> --json '{
+  "extra": {
+    "equivalent_cache_billing_enabled": true,
+    "equivalent_cache_billing_loss_factor": 1.08,
+    "equivalent_cache_billing_input_share": 0.20,
+    "equivalent_cache_billing_cache_read_share": 0.75,
+    "equivalent_cache_billing_cache_creation_share": 0.05
+  }
+}'
+node scripts/sub2api-admin.js accounts get <account-id>
+```
+
+Disable:
+
+```bash
+node scripts/sub2api-admin.js accounts bulk-update --ids <account-id> --json '{"extra":{"equivalent_cache_billing_enabled":false}}'
+```
+
+Full runbook: `../../../docs/EQUIVALENT_CACHE_BILLING_CN.md`.
+
 ### 导入
 
 通用后台导入：
