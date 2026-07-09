@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -140,6 +141,57 @@ func TestGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloadHash(
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
 	require.Equal(t, payloadHash, billingRepo.lastCmd.RequestPayloadHash)
+}
+
+func TestGatewayServiceRecordUsage_EquivalentCacheBillingRewritesUsageBeforeCostAndBilling(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_equivalent_cache_billing",
+			Usage: ClaudeUsage{
+				InputTokens:  2000,
+				OutputTokens: 100,
+			},
+			Model:    "claude-sonnet-4",
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{ID: 501, Quota: 100},
+		User:   &User{ID: 601},
+		Account: &Account{
+			ID: 701,
+			Extra: map[string]any{
+				equivalentCacheBillingEnabledKey: true,
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+
+	require.Less(t, usageRepo.lastLog.InputTokens, 2000)
+	require.Greater(t, usageRepo.lastLog.CacheReadTokens, 0)
+	require.Greater(t, usageRepo.lastLog.CacheCreationTokens, 0)
+	require.Equal(t, int(math.Ceil(100*1.08)), usageRepo.lastLog.OutputTokens)
+
+	promptTokens := usageRepo.lastLog.InputTokens + usageRepo.lastLog.CacheReadTokens + usageRepo.lastLog.CacheCreationTokens
+	cacheRate := float64(usageRepo.lastLog.CacheReadTokens) / float64(promptTokens)
+	require.GreaterOrEqual(t, cacheRate, 0.95)
+
+	require.Equal(t, usageRepo.lastLog.InputTokens, billingRepo.lastCmd.InputTokens)
+	require.Equal(t, usageRepo.lastLog.OutputTokens, billingRepo.lastCmd.OutputTokens)
+	require.Equal(t, usageRepo.lastLog.CacheReadTokens, billingRepo.lastCmd.CacheReadTokens)
+	require.Equal(t, usageRepo.lastLog.CacheCreationTokens, billingRepo.lastCmd.CacheCreationTokens)
+
+	expectedPromptCost := float64(usageRepo.lastLog.InputTokens)*3e-6 +
+		float64(usageRepo.lastLog.CacheReadTokens)*0.3e-6 +
+		float64(usageRepo.lastLog.CacheCreationTokens)*3.75e-6
+	expectedOutputCost := float64(usageRepo.lastLog.OutputTokens) * 15e-6
+	require.InDelta(t, expectedPromptCost+expectedOutputCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, (expectedPromptCost+expectedOutputCost)*1.1, usageRepo.lastLog.ActualCost, 1e-12)
 }
 
 func TestGatewayServiceRecordUsage_BillingFingerprintFallsBackToContextRequestID(t *testing.T) {
