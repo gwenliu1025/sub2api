@@ -41,7 +41,9 @@ func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, re
 	return s.release, nil
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.repo = repo
+	s.calls++
 	return s.recentReleases, s.recentErr
 }
 
@@ -122,6 +124,19 @@ func TestUpdateServiceListRollbackVersionsSortsUnorderedInput(t *testing.T) {
 	require.Equal(t, "0.1.146", versions[0].Version)
 	require.Equal(t, "0.1.145", versions[1].Version)
 	require.Equal(t, "0.1.144", versions[2].Version)
+}
+
+func TestUpdateServiceListRollbackVersionsUsesConfiguredRepo(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		recentReleases: []*GitHubRelease{{TagName: "v0.1.146"}},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api", "0.1.147", "release")
+
+	_, err := svc.ListRollbackVersions(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, "gwenliu1025/sub2api", client.repo)
+	require.Equal(t, 1, client.calls)
 }
 
 func TestUpdateServiceListRollbackVersionsEmptyWhenNoneOlder(t *testing.T) {
