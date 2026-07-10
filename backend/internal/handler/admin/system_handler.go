@@ -16,6 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var restartServiceAsync = sysutil.RestartServiceAsync
+
 // SystemHandler handles system-related operations
 type SystemHandler struct {
 	updateSvc systemUpdateService
@@ -25,6 +27,9 @@ type SystemHandler struct {
 type systemUpdateService interface {
 	CheckUpdate(ctx context.Context, force bool) (*service.UpdateInfo, error)
 	PerformUpdate(ctx context.Context) error
+	UsesDockerAgent() bool
+	ActivatePreparedUpdate(ctx context.Context) (*service.UpdateAgentStatus, error)
+	GetUpdateStatus(ctx context.Context) (*service.UpdateAgentStatus, error)
 	Rollback() error
 	ListRollbackVersions(ctx context.Context) ([]service.RollbackVersion, error)
 	RollbackToVersion(ctx context.Context, version string) error
@@ -57,6 +62,17 @@ func (h *SystemHandler) CheckUpdates(c *gin.Context) {
 		return
 	}
 	response.Success(c, info)
+}
+
+// GetUpdateStatus returns the current update agent state
+// GET /api/v1/admin/system/update-status
+func (h *SystemHandler) GetUpdateStatus(c *gin.Context) {
+	status, err := h.updateSvc.GetUpdateStatus(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, status)
 }
 
 // PerformUpdate downloads and applies the update
@@ -181,21 +197,39 @@ func (h *SystemHandler) RestartService(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
+		var releaseReason string
 		succeeded := false
 		defer func() {
-			release("", succeeded)
+			release(releaseReason, succeeded)
 		}()
+
+		if h.updateSvc.UsesDockerAgent() {
+			status, err := h.updateSvc.ActivatePreparedUpdate(ctx)
+			if err != nil {
+				releaseReason = "SYSTEM_RESTART_FAILED"
+				return nil, err
+			}
+			succeeded = true
+			return gin.H{
+				"message":      "Image activation initiated",
+				"update_mode":  "docker_agent",
+				"status":       status,
+				"operation_id": lock.OperationID(),
+			}, nil
+		}
 
 		// Schedule service restart in background after sending response
 		// This ensures the client receives the success response before the service restarts
+		restart := restartServiceAsync
 		go func() {
 			// Wait a moment to ensure the response is sent
 			time.Sleep(500 * time.Millisecond)
-			sysutil.RestartServiceAsync()
+			restart()
 		}()
 		succeeded = true
 		return gin.H{
 			"message":      "Service restart initiated",
+			"update_mode":  "binary",
 			"operation_id": lock.OperationID(),
 		}, nil
 	})

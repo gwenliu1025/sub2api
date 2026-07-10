@@ -12,12 +12,20 @@ import (
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 type systemHandlerUpdateServiceStub struct {
+	usesDockerAgent      bool
+	activateStatus       *service.UpdateAgentStatus
+	activateErr          error
+	status               *service.UpdateAgentStatus
+	statusErr            error
+	activateCalls        int
+	statusCalls          int
 	performErr           error
 	updateInfo           *service.UpdateInfo
 	checkErr             error
@@ -42,6 +50,20 @@ func (s *systemHandlerUpdateServiceStub) PerformUpdate(context.Context) error {
 	return s.performErr
 }
 
+func (s *systemHandlerUpdateServiceStub) UsesDockerAgent() bool {
+	return s.usesDockerAgent
+}
+
+func (s *systemHandlerUpdateServiceStub) ActivatePreparedUpdate(context.Context) (*service.UpdateAgentStatus, error) {
+	s.activateCalls++
+	return s.activateStatus, s.activateErr
+}
+
+func (s *systemHandlerUpdateServiceStub) GetUpdateStatus(context.Context) (*service.UpdateAgentStatus, error) {
+	s.statusCalls++
+	return s.status, s.statusErr
+}
+
 func (s *systemHandlerUpdateServiceStub) Rollback() error {
 	s.rollbackCall++
 	return nil
@@ -62,17 +84,20 @@ type systemUpdateResponseEnvelope struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		Message         string `json:"message"`
-		AlreadyUpToDate bool   `json:"already_up_to_date"`
-		CurrentVersion  string `json:"current_version"`
-		LatestVersion   string `json:"latest_version"`
-		OperationID     string `json:"operation_id"`
+		Message         string                     `json:"message"`
+		AlreadyUpToDate bool                       `json:"already_up_to_date"`
+		CurrentVersion  string                     `json:"current_version"`
+		LatestVersion   string                     `json:"latest_version"`
+		OperationID     string                     `json:"operation_id"`
+		UpdateMode      string                     `json:"update_mode"`
+		Status          *service.UpdateAgentStatus `json:"status"`
 	} `json:"data"`
 }
 
 type systemUpdateErrorEnvelope struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Reason  string `json:"reason"`
 }
 
 func newSystemHandlerTestRouter(t *testing.T, updateSvc *systemHandlerUpdateServiceStub, repo *memoryIdempotencyRepoStub) *gin.Engine {
@@ -92,8 +117,19 @@ func newSystemHandlerTestRouter(t *testing.T, updateSvc *systemHandlerUpdateServ
 	router := gin.New()
 	router.POST("/api/v1/admin/system/update", handler.PerformUpdate)
 	router.POST("/api/v1/admin/system/rollback", handler.Rollback)
+	router.POST("/api/v1/admin/system/restart", handler.RestartService)
+	router.GET("/api/v1/admin/system/update-status", handler.GetUpdateStatus)
 	router.GET("/api/v1/admin/system/rollback-versions", handler.GetRollbackVersions)
 	return router
+}
+
+func stubRestartServiceAsync(t *testing.T, restart func()) {
+	t.Helper()
+	original := restartServiceAsync
+	restartServiceAsync = restart
+	t.Cleanup(func() {
+		restartServiceAsync = original
+	})
 }
 
 func requireSystemLockStatus(t *testing.T, repo *memoryIdempotencyRepoStub, wantStatus string) {
@@ -163,6 +199,159 @@ func TestSystemHandlerPerformUpdateFailureStillReturnsInternalError(t *testing.T
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, http.StatusInternalServerError, body.Code)
 	require.Equal(t, "internal error", body.Message)
+}
+
+func TestSystemHandlerPerformUpdateReturnsSpecificAgentError(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{
+		performErr: infraerrors.New(
+			http.StatusBadGateway,
+			"UPDATE_IMAGE_PULL_FAILED",
+			"update image pull failed",
+		),
+	}
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/update", nil)
+	req.Header.Set("Idempotency-Key", "agent-pull-failed")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Equal(t, 1, updateSvc.performCall)
+	requireSystemLockStatus(t, repo, service.IdempotencyStatusFailedRetryable)
+
+	var body systemUpdateErrorEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, http.StatusBadGateway, body.Code)
+	require.Equal(t, "UPDATE_IMAGE_PULL_FAILED", body.Reason)
+	require.Equal(t, "update image pull failed", body.Message)
+}
+
+func TestSystemHandlerRestartDockerModeActivatesPreparedImage(t *testing.T) {
+	status := &service.UpdateAgentStatus{
+		State:        service.UpdateAgentActivating,
+		CurrentImage: "ghcr.io/example/sub2api:0.1.149",
+		TargetImage:  "ghcr.io/example/sub2api:0.1.150",
+		Message:      "activation started",
+		UpdatedAt:    "2026-07-10T10:00:00Z",
+	}
+	updateSvc := &systemHandlerUpdateServiceStub{
+		usesDockerAgent: true,
+		activateStatus:  status,
+	}
+	restartCalled := make(chan struct{}, 1)
+	stubRestartServiceAsync(t, func() {
+		restartCalled <- struct{}{}
+	})
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/restart", nil)
+	req.Header.Set("Idempotency-Key", "docker-activate")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, updateSvc.activateCalls)
+	requireSystemLockStatus(t, repo, service.IdempotencyStatusSucceeded)
+
+	select {
+	case <-restartCalled:
+		t.Fatal("binary service restart was scheduled in docker agent mode")
+	case <-time.After(600 * time.Millisecond):
+	}
+
+	var body systemUpdateResponseEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "Image activation initiated", body.Data.Message)
+	require.Equal(t, "docker_agent", body.Data.UpdateMode)
+	require.Equal(t, status, body.Data.Status)
+	require.NotEmpty(t, body.Data.OperationID)
+}
+
+func TestSystemHandlerRestartBinaryModeKeepsLegacyRestartPath(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{}
+	restartCalled := make(chan struct{}, 1)
+	stubRestartServiceAsync(t, func() {
+		restartCalled <- struct{}{}
+	})
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/restart", nil)
+	req.Header.Set("Idempotency-Key", "binary-restart")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 0, updateSvc.activateCalls)
+	requireSystemLockStatus(t, repo, service.IdempotencyStatusSucceeded)
+
+	select {
+	case <-restartCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("binary service restart was not scheduled")
+	}
+
+	var body systemUpdateResponseEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "Service restart initiated", body.Data.Message)
+	require.Equal(t, "binary", body.Data.UpdateMode)
+	require.NotEmpty(t, body.Data.OperationID)
+}
+
+func TestSystemHandlerGetUpdateStatusReturnsAgentState(t *testing.T) {
+	status := &service.UpdateAgentStatus{
+		State:         service.UpdateAgentPrepared,
+		CurrentImage:  "ghcr.io/example/sub2api:0.1.149",
+		TargetImage:   "ghcr.io/example/sub2api:0.1.150",
+		PreviousImage: "ghcr.io/example/sub2api:0.1.148",
+		Message:       "ready to activate",
+		UpdatedAt:     "2026-07-10T10:00:00Z",
+	}
+	updateSvc := &systemHandlerUpdateServiceStub{status: status}
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system/update-status", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, updateSvc.statusCalls)
+
+	var body struct {
+		Code int                        `json:"code"`
+		Data *service.UpdateAgentStatus `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, 0, body.Code)
+	require.Equal(t, status, body.Data)
+}
+
+func TestSystemHandlerGetUpdateStatusMapsAgentError(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{
+		statusErr: infraerrors.ServiceUnavailable(
+			"UPDATE_AGENT_UNAVAILABLE",
+			"update agent is unavailable",
+		),
+	}
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system/update-status", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, 1, updateSvc.statusCalls)
+
+	var body systemUpdateErrorEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, http.StatusServiceUnavailable, body.Code)
+	require.Equal(t, "UPDATE_AGENT_UNAVAILABLE", body.Reason)
+	require.Equal(t, "update agent is unavailable", body.Message)
 }
 
 func TestSystemHandlerRollbackWithoutBodyUsesLegacyBackup(t *testing.T) {
