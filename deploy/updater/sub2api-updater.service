@@ -1,0 +1,38 @@
+[Unit]
+Description=Sub2API host Docker update service
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/sub2api-updater
+ExecStart=/usr/bin/python3 /opt/sub2api-updater/sub2api_updater.py --config /etc/sub2api-updater/config.json
+Restart=on-failure
+RestartSec=5s
+RuntimeDirectory=sub2api-updater
+RuntimeDirectoryMode=0755
+StateDirectory=sub2api-updater
+StateDirectoryMode=0700
+UMask=0007
+Environment=PYTHONUNBUFFERED=1
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
