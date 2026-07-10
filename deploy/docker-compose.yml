@@ -16,7 +16,7 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: weishaw/sub2api:latest
+    image: ${SUB2API_IMAGE}
     container_name: sub2api
     restart: unless-stopped
     ulimits:
@@ -28,6 +28,7 @@ services:
     volumes:
       # Data persistence (config.yaml will be auto-generated here)
       - sub2api_data:/app/data
+      - /run/sub2api-updater:/run/sub2api-updater:ro
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:
       # - ./config.yaml:/app/data/config.yaml
@@ -147,6 +148,10 @@ services:
       # =======================================================================
       # Repository for admin online updates
       - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
+      - UPDATE_MODE=${UPDATE_MODE:-binary}
+      - UPDATE_AGENT_SOCKET=${UPDATE_AGENT_SOCKET:-/run/sub2api-updater/updater.sock}
+      - UPDATE_AGENT_TIMEOUT_SECONDS=${UPDATE_AGENT_TIMEOUT_SECONDS:-600}
+      - UPDATE_IMAGE_REPOSITORY=${UPDATE_IMAGE_REPOSITORY:-ghcr.io/gwenliu1025/sub2api}
       # Proxy for accessing GitHub (online updates + pricing data)
       # Examples: http://host:port, socks5://host:port
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
@@ -177,16 +182,10 @@ services:
       - sub2api-network
     healthcheck:
       test:
-        [
-          "CMD",
-          "wget",
-          "-q",
-          "-T",
-          "5",
-          "-O",
-          "/dev/null",
-          "http://localhost:8080/health",
-        ]
+        - CMD-SHELL
+        - >-
+          if [ "$${FORCE_UNHEALTHY_HEALTHCHECK:-false}" = "true" ]; then exit 1; fi;
+          wget -q -T 5 -O /dev/null http://localhost:8080/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
