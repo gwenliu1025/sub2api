@@ -8,6 +8,15 @@ permissions:
   contents: read
 
 jobs:
+  release-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Release policy checks
+        run: |
+          .github/scripts/test-validate-release-version.sh
+          .github/scripts/test-release-policy.sh
+
   test:
     runs-on: ubuntu-latest
     steps:

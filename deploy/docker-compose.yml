@@ -148,7 +148,7 @@ services:
       # =======================================================================
       # Repository for admin online updates
       - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
-      - UPDATE_MODE=${UPDATE_MODE:-binary}
+      - UPDATE_MODE=${UPDATE_MODE:-docker_agent}
       - UPDATE_AGENT_SOCKET=${UPDATE_AGENT_SOCKET:-/run/sub2api-updater/updater.sock}
       - UPDATE_AGENT_TIMEOUT_SECONDS=${UPDATE_AGENT_TIMEOUT_SECONDS:-600}
       - UPDATE_IMAGE_REPOSITORY=${UPDATE_IMAGE_REPOSITORY:-ghcr.io/gwenliu1025/sub2api}
@@ -184,7 +184,6 @@ services:
       test:
         - CMD-SHELL
         - >-
-          if [ "$${FORCE_UNHEALTHY_HEALTHCHECK:-false}" = "true" ]; then exit 1; fi;
           wget -q -T 5 -O /dev/null http://localhost:8080/health || exit 1
       interval: 30s
       timeout: 10s

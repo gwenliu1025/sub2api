@@ -24,7 +24,7 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: weishaw/sub2api:latest
+    image: ${SUB2API_IMAGE}
     container_name: sub2api
     restart: unless-stopped
     ulimits:
@@ -36,6 +36,7 @@ services:
     volumes:
       # Local directory mapping for easy migration
       - ./data:/app/data:Z
+      - /run/sub2api-updater:/run/sub2api-updater:ro
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:
       # - ./config.yaml:/app/data/config.yaml
@@ -151,6 +152,10 @@ services:
       # =======================================================================
       # Repository for admin online updates
       - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
+      - UPDATE_MODE=${UPDATE_MODE:-docker_agent}
+      - UPDATE_AGENT_SOCKET=${UPDATE_AGENT_SOCKET:-/run/sub2api-updater/updater.sock}
+      - UPDATE_AGENT_TIMEOUT_SECONDS=${UPDATE_AGENT_TIMEOUT_SECONDS:-600}
+      - UPDATE_IMAGE_REPOSITORY=${UPDATE_IMAGE_REPOSITORY:-ghcr.io/gwenliu1025/sub2api}
       # Proxy for accessing GitHub (online updates + pricing data)
       # Examples: http://host:port, socks5://host:port
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
