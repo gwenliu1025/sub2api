@@ -33,10 +33,29 @@ func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient)
 // ProvideUpdateService creates UpdateService with BuildInfo.
 func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, cfg *config.Config, buildInfo BuildInfo) *UpdateService {
 	repo := ""
+	mode := config.UpdateModeBinary
+	var agentClient UpdateAgentClient
 	if cfg != nil {
 		repo = cfg.Update.Repo
+		mode = cfg.Update.Mode
+		if mode == config.UpdateModeDockerAgent {
+			timeout := time.Duration(cfg.Update.AgentTimeoutSeconds) * time.Second
+			agentClient = NewUnixUpdateAgentClient(
+				cfg.Update.AgentSocket,
+				cfg.Update.ImageRepository,
+				timeout,
+			)
+		}
 	}
-	return NewUpdateService(cache, githubClient, repo, buildInfo.Version, buildInfo.BuildType)
+	return NewUpdateService(
+		cache,
+		githubClient,
+		repo,
+		buildInfo.Version,
+		buildInfo.BuildType,
+		mode,
+		agentClient,
+	)
 }
 
 // ProvideEmailQueueService creates EmailQueueService with default worker count

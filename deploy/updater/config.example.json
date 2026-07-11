@@ -1,0 +1,21 @@
+{
+  "socket_path": "/run/sub2api-updater/updater.sock",
+  "socket_gid": 1000,
+  "allowed_uids": [
+    0,
+    1000
+  ],
+  "image_repository": "ghcr.io/gwenliu1025/sub2api",
+  "image_source": "https://github.com/gwenliu1025/sub2api",
+  "compose_directory": "/home/ubuntu/sub2api",
+  "compose_file": "/home/ubuntu/sub2api/docker-compose.yml",
+  "environment_file": "/home/ubuntu/sub2api/.env",
+  "service_name": "sub2api",
+  "container_name": "sub2api",
+  "expected_architecture": "amd64",
+  "health_url": "http://127.0.0.1:8080/health",
+  "prepare_timeout_seconds": 600,
+  "activation_timeout_seconds": 120,
+  "poll_interval_seconds": 2,
+  "state_file": "/var/lib/sub2api-updater/state.json"
+}

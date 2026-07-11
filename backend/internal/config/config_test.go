@@ -34,6 +34,100 @@ func TestLoadUpdateRepoFromEnv(t *testing.T) {
 	require.Equal(t, "gwenliu1025/sub2api-canary", cfg.Update.Repo)
 }
 
+func TestLoadDefaultDockerUpdateConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, UpdateModeBinary, cfg.Update.Mode)
+	require.Equal(t, "/run/sub2api-updater/updater.sock", cfg.Update.AgentSocket)
+	require.Equal(t, 600, cfg.Update.AgentTimeoutSeconds)
+	require.Equal(t, "ghcr.io/gwenliu1025/sub2api", cfg.Update.ImageRepository)
+}
+
+func TestLoadDockerUpdateConfigFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("UPDATE_MODE", "docker_agent")
+	t.Setenv("UPDATE_AGENT_SOCKET", "/run/custom/updater.sock")
+	t.Setenv("UPDATE_AGENT_TIMEOUT_SECONDS", "900")
+	t.Setenv("UPDATE_IMAGE_REPOSITORY", "ghcr.io/gwenliu1025/sub2api-canary")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, UpdateModeDockerAgent, cfg.Update.Mode)
+	require.Equal(t, "/run/custom/updater.sock", cfg.Update.AgentSocket)
+	require.Equal(t, 900, cfg.Update.AgentTimeoutSeconds)
+	require.Equal(t, "ghcr.io/gwenliu1025/sub2api-canary", cfg.Update.ImageRepository)
+}
+
+func TestValidateDockerUpdateConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*Config)
+		wantErr string
+	}{
+		{
+			name: "unsupported mode",
+			mutate: func(cfg *Config) {
+				cfg.Update.Mode = "docker"
+			},
+			wantErr: "update.mode",
+		},
+		{
+			name: "relative agent socket",
+			mutate: func(cfg *Config) {
+				cfg.Update.Mode = UpdateModeDockerAgent
+				cfg.Update.AgentSocket = "run/sub2api-updater/updater.sock"
+			},
+			wantErr: "update.agent_socket",
+		},
+		{
+			name: "zero agent timeout",
+			mutate: func(cfg *Config) {
+				cfg.Update.Mode = UpdateModeDockerAgent
+				cfg.Update.AgentTimeoutSeconds = 0
+			},
+			wantErr: "update.agent_timeout_seconds",
+		},
+		{
+			name: "tagged image repository",
+			mutate: func(cfg *Config) {
+				cfg.Update.Mode = UpdateModeDockerAgent
+				cfg.Update.ImageRepository = "ghcr.io/gwenliu1025/sub2api:latest"
+			},
+			wantErr: "update.image_repository",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.mutate(cfg)
+
+			err = cfg.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestValidateBinaryUpdateModeIgnoresDockerAgentSettings(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Update.Mode = UpdateModeBinary
+	cfg.Update.AgentSocket = "relative.sock"
+	cfg.Update.AgentTimeoutSeconds = 0
+	cfg.Update.ImageRepository = "invalid:tag"
+
+	require.NoError(t, cfg.Validate())
+}
+
 func TestValidateUpdateRepoBlankFallsBackToDefault(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

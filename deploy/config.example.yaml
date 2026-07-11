@@ -1138,3 +1138,7 @@ update:
   # Leave empty for direct connection (recommended for overseas servers)
   # 留空表示直连（适用于海外服务器）
   proxy_url: ""
+  mode: "binary"
+  agent_socket: "/run/sub2api-updater/updater.sock"
+  agent_timeout_seconds: 600
+  image_repository: "ghcr.io/gwenliu1025/sub2api"

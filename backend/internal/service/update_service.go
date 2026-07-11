@@ -19,12 +19,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 var (
 	ErrNoUpdateAvailable         = infraerrors.Conflict("ALREADY_UP_TO_DATE", "no update available; current version is latest")
 	ErrRollbackVersionNotAllowed = infraerrors.BadRequest("ROLLBACK_VERSION_NOT_ALLOWED", "version is not in the allowed rollback list")
+	ErrUpdateAgentUnavailable    = infraerrors.ServiceUnavailable("UPDATE_AGENT_UNAVAILABLE", "update agent is unavailable")
+	ErrUpdateAgentBinaryMode     = infraerrors.BadRequest("UPDATE_AGENT_UNAVAILABLE_IN_BINARY_MODE", "update agent operations are unavailable in binary update mode")
 )
 
 const (
@@ -66,16 +69,25 @@ type UpdateService struct {
 	repo           string
 	currentVersion string
 	buildType      string // "source" for manual builds, "release" for CI builds
+	mode           string
+	agentClient    UpdateAgentClient
 }
 
 // NewUpdateService creates a new UpdateService
-func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, repo, version, buildType string) *UpdateService {
+func NewUpdateService(
+	cache UpdateCache,
+	githubClient GitHubReleaseClient,
+	repo, version, buildType, mode string,
+	agentClient UpdateAgentClient,
+) *UpdateService {
 	return &UpdateService{
 		cache:          cache,
 		githubClient:   githubClient,
 		repo:           normalizeUpdateRepo(repo),
 		currentVersion: version,
 		buildType:      buildType,
+		mode:           mode,
+		agentClient:    agentClient,
 	}
 }
 
@@ -96,6 +108,7 @@ type UpdateInfo struct {
 	Cached         bool         `json:"cached"`
 	Warning        string       `json:"warning,omitempty"`
 	BuildType      string       `json:"build_type"` // "source" or "release"
+	UpdateMode     string       `json:"update_mode"`
 }
 
 // ReleaseInfo contains GitHub release details
@@ -162,6 +175,7 @@ func (s *UpdateService) CheckUpdate(ctx context.Context, force bool) (*UpdateInf
 			HasUpdate:      false,
 			Warning:        err.Error(),
 			BuildType:      s.buildType,
+			UpdateMode:     s.mode,
 		}, nil
 	}
 
@@ -182,7 +196,46 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 		return ErrNoUpdateAvailable
 	}
 
+	if s.UsesDockerAgent() {
+		agentClient, err := s.requireUpdateAgentClient()
+		if err != nil {
+			return err
+		}
+		_, err = agentClient.Prepare(ctx, info.LatestVersion)
+		return err
+	}
+
 	return s.applyReleaseAssets(ctx, info.ReleaseInfo.Assets)
+}
+
+func (s *UpdateService) UsesDockerAgent() bool {
+	return s.mode == config.UpdateModeDockerAgent
+}
+
+func (s *UpdateService) ActivatePreparedUpdate(ctx context.Context) (*UpdateAgentStatus, error) {
+	agentClient, err := s.requireUpdateAgentClient()
+	if err != nil {
+		return nil, err
+	}
+	return agentClient.Activate(ctx)
+}
+
+func (s *UpdateService) GetUpdateStatus(ctx context.Context) (*UpdateAgentStatus, error) {
+	agentClient, err := s.requireUpdateAgentClient()
+	if err != nil {
+		return nil, err
+	}
+	return agentClient.Status(ctx)
+}
+
+func (s *UpdateService) requireUpdateAgentClient() (UpdateAgentClient, error) {
+	if !s.UsesDockerAgent() {
+		return nil, ErrUpdateAgentBinaryMode
+	}
+	if s.agentClient == nil {
+		return nil, ErrUpdateAgentUnavailable
+	}
+	return s.agentClient, nil
 }
 
 // applyReleaseAssets downloads the platform archive from the given release assets,
@@ -291,6 +344,13 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
+	if s.UsesDockerAgent() {
+		return infraerrors.BadRequest(
+			"LEGACY_ROLLBACK_UNAVAILABLE",
+			"local binary rollback is unavailable in Docker update mode",
+		)
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -356,6 +416,15 @@ func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) e
 	}
 	if match == nil {
 		return ErrRollbackVersionNotAllowed
+	}
+
+	if s.UsesDockerAgent() {
+		agentClient, err := s.requireUpdateAgentClient()
+		if err != nil {
+			return err
+		}
+		_, err = agentClient.Prepare(ctx, target)
+		return err
 	}
 
 	assets := make([]Asset, len(match.Assets))
@@ -437,8 +506,9 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 			HTMLURL:     release.HTMLURL,
 			Assets:      assets,
 		},
-		Cached:    false,
-		BuildType: s.buildType,
+		Cached:     false,
+		BuildType:  s.buildType,
+		UpdateMode: s.mode,
 	}, nil
 }
 
@@ -634,6 +704,7 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 		ReleaseInfo:    cached.ReleaseInfo,
 		Cached:         true,
 		BuildType:      s.buildType,
+		UpdateMode:     s.mode,
 	}, nil
 }
 

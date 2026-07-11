@@ -11,6 +11,27 @@ export interface ReleaseInfo {
   html_url: string
 }
 
+export type UpdateMode = 'binary' | 'docker_agent'
+
+export type UpdateAgentState =
+  | 'idle'
+  | 'preparing'
+  | 'prepared'
+  | 'activating'
+  | 'healthy'
+  | 'rolled_back'
+  | 'failed'
+  | 'rollback_failed'
+
+export interface UpdateAgentStatus {
+  state: UpdateAgentState
+  current_image: string
+  target_image: string
+  previous_image: string
+  message: string
+  updated_at: string
+}
+
 export interface VersionInfo {
   current_version: string
   latest_version: string
@@ -19,6 +40,7 @@ export interface VersionInfo {
   cached: boolean
   warning?: string
   build_type: string // "source" for manual builds, "release" for CI builds
+  update_mode: UpdateMode
 }
 
 /**
@@ -66,7 +88,14 @@ export async function getRollbackVersions(): Promise<{ versions: RollbackVersion
  * Downloads and applies the latest version
  */
 export async function performUpdate(): Promise<UpdateResult> {
-  const { data } = await apiClient.post<UpdateResult>('/admin/system/update')
+  const { data } = await apiClient.post<UpdateResult>('/admin/system/update', undefined, {
+    timeout: 610_000
+  })
+  return data
+}
+
+export async function getUpdateStatus(): Promise<UpdateAgentStatus> {
+  const { data } = await apiClient.get<UpdateAgentStatus>('/admin/system/update-status')
   return data
 }
 
@@ -85,8 +114,14 @@ export async function rollback(version?: string): Promise<UpdateResult> {
 /**
  * Restart the service
  */
-export async function restartService(): Promise<{ message: string }> {
-  const { data } = await apiClient.post<{ message: string }>('/admin/system/restart')
+export interface RestartResult {
+  message: string
+  update_mode: UpdateMode
+  status?: UpdateAgentStatus
+}
+
+export async function restartService(): Promise<RestartResult> {
+  const { data } = await apiClient.post<RestartResult>('/admin/system/restart')
   return data
 }
 
@@ -94,6 +129,7 @@ export const systemAPI = {
   getVersion,
   checkUpdates,
   performUpdate,
+  getUpdateStatus,
   getRollbackVersions,
   rollback,
   restartService
