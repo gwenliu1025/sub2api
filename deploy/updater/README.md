@@ -33,9 +33,10 @@ The interaction is deliberately two-step. First call prepare and wait for a
 terminal state such as `healthy`, `rolled_back`, `failed`, or
 `rollback_failed`.
 
-## Graduation Install
+## Host Installation (Run Later)
 
-Run from the repository checkout on the graduation host:
+Run from the repository checkout only when you intentionally prepare a target
+host for Docker management-panel updates:
 
 ```bash
 sudo ./deploy/updater/install.sh \

@@ -95,9 +95,6 @@ FROM ${ALPINE_IMAGE}
 
 ARG VERSION=dev
 ARG OCI_SOURCE=https://github.com/gwenliu1025/sub2api
-ARG FORCE_UNHEALTHY_HEALTHCHECK=false
-
-ENV FORCE_UNHEALTHY_HEALTHCHECK=${FORCE_UNHEALTHY_HEALTHCHECK}
 
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
@@ -147,8 +144,7 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD if [ "${FORCE_UNHEALTHY_HEALTHCHECK}" = "true" ]; then exit 1; fi; \
-    wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
+    CMD wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
 
 # Run the application (entrypoint fixes /app/data ownership then execs as sub2api)
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

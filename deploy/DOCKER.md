@@ -1,76 +1,43 @@
-# Sub2API Docker Image
+# Sub2API Docker Release
 
-Sub2API is an AI API Gateway Platform for distributing and managing AI product subscription API quotas.
+The official image for this fork is published only through GitHub Releases.
+Each release has one matching multi-platform image:
 
-## Quick Start
+```text
+GitHub Release: v0.1.150
+Docker image:   ghcr.io/gwenliu1025/sub2api:0.1.150
+```
+
+There is no `latest` tag and no architecture-specific tag. The same version
+tag works on `linux/amd64` and `linux/arm64`.
+
+## Deploy With Compose
+
+Use one of the provided Compose files and copy `.env.example` to `.env`.
+Keep `SUB2API_IMAGE` on an exact published version.
 
 ```bash
-docker run -d \
-  --name sub2api \
-  -p 8080:8080 \
-  -e DATABASE_URL="postgres://user:pass@host:5432/sub2api" \
-  -e REDIS_URL="redis://host:6379" \
-  weishaw/sub2api:latest
+cp .env.example .env
+docker compose up -d
 ```
 
-## Docker Compose
+## Management-Panel Updates
 
-```yaml
-version: '3.8'
+Docker updates require the host updater from `deploy/updater/` to be installed
+on the target host. It owns Docker access; the application receives only its
+Unix socket.
 
-services:
-  sub2api:
-    image: weishaw/sub2api:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/sub2api?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - db
-      - redis
+After the updater is installed, the management panel follows two steps:
 
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=sub2api
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+1. **Prepare Image** reads a release from `gwenliu1025/sub2api`, pulls the
+   matching `ghcr.io/gwenliu1025/sub2api:X.Y.Z` image, and verifies it without
+   interrupting service.
+2. **Restart To Switch** recreates only `sub2api` on that prepared image,
+   checks health, and restores the previous exact image automatically if the
+   switch fails.
 
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
+Both the GitHub Release and its same-version GHCR image must exist. A Release
+asset alone is not sufficient for a Docker update.
 
-volumes:
-  postgres_data:
-  redis_data:
-```
-
-## Environment Variables
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes | - |
-| `REDIS_URL` | Redis connection string | Yes | - |
-| `PORT` | Server port | No | `8080` |
-| `GIN_MODE` | Gin framework mode (`debug`/`release`) | No | `release` |
-
-## Supported Architectures
-
-- `linux/amd64`
-- `linux/arm64`
-
-## Tags
-
-- `latest` - Latest stable release
-- `x.y.z` - Specific version
-- `x.y` - Latest patch of minor version
-- `x` - Latest minor of major version
-
-## Links
-
-- [GitHub Repository](https://github.com/weishaw/sub2api)
-- [Documentation](https://github.com/weishaw/sub2api#readme)
+See `deploy/updater/README.md` for host-updater installation and recovery
+details.

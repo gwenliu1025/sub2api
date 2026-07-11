@@ -12,7 +12,7 @@
 
 services:
   sub2api:
-    image: weishaw/sub2api:latest
+    image: ${SUB2API_IMAGE}
     container_name: sub2api
     restart: unless-stopped
     ulimits:
@@ -23,6 +23,7 @@ services:
       - "${BIND_HOST:-0.0.0.0}:${SERVER_PORT:-8080}:8080"
     volumes:
       - sub2api_data:/app/data
+      - /run/sub2api-updater:/run/sub2api-updater:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -104,6 +105,10 @@ services:
       # Update Configuration
       # =======================================================================
       - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
+      - UPDATE_MODE=${UPDATE_MODE:-docker_agent}
+      - UPDATE_AGENT_SOCKET=${UPDATE_AGENT_SOCKET:-/run/sub2api-updater/updater.sock}
+      - UPDATE_AGENT_TIMEOUT_SECONDS=${UPDATE_AGENT_TIMEOUT_SECONDS:-600}
+      - UPDATE_IMAGE_REPOSITORY=${UPDATE_IMAGE_REPOSITORY:-ghcr.io/gwenliu1025/sub2api}
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
 
       # =======================================================================

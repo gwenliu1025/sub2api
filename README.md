@@ -229,7 +229,7 @@ One-click installation script that downloads pre-built binaries from GitHub Rele
 #### Installation Steps
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/main/deploy/install.sh | sudo bash
 ```
 
 The script will:
@@ -259,12 +259,16 @@ The Setup Wizard will guide you through:
 
 #### Upgrade
 
-You can upgrade directly from the **Admin Dashboard** by clicking the **Check for Updates** button in the top-left corner.
+Binary installations can upgrade from the **Admin Dashboard**. Docker
+installations use the host updater and keep a two-step flow:
 
-The web interface will:
-- Check for new versions automatically
-- Download and apply updates with one click
-- Support rollback if needed
+1. **Prepare Image** pulls and verifies the exact matching image from
+   `ghcr.io/gwenliu1025/sub2api`.
+2. **Restart To Switch** recreates only `sub2api`, verifies health, and
+   restores the previous image if activation fails.
+
+For Docker mode, a GitHub Release and the same-version GHCR image must both
+exist in `gwenliu1025/sub2api`.
 
 #### Useful Commands
 
@@ -279,7 +283,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # Uninstall
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -302,7 +306,7 @@ Use the automated deployment script for easy setup:
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # Download and run deployment preparation script
-curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/main/deploy/docker-deploy.sh | bash
 
 # Start services
 docker compose up -d
@@ -324,7 +328,7 @@ If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/gwenliu1025/sub2api.git
 cd sub2api/deploy
 
 # 2. Copy environment configuration
@@ -405,9 +409,8 @@ docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
 #### Upgrade
 
 ```bash
-# Pull latest image and recreate container
-docker compose -f docker-compose.local.yml pull
-docker compose -f docker-compose.local.yml up -d
+# Install deploy/updater once on the target host, then use Prepare Image and
+# Restart To Switch in the management panel.
 ```
 
 #### Easy Migration (Local Directory Version)
@@ -463,7 +466,7 @@ Build and run from source code for development or customization.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/gwenliu1025/sub2api.git
 cd sub2api
 
 # 2. Install pnpm (if not already installed)
