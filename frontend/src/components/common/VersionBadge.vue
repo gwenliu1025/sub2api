@@ -982,9 +982,9 @@ async function handleRestart() {
     try {
       await restartService()
     } catch (error: unknown) {
-      // A disconnect is expected while either deployment mode restarts. A Docker
-      // agent HTTP response, however, is an explicit rejection and should be shown.
-      if (isDockerAgent.value && isExplicitApiError(error)) {
+      // Structured API/HTTP errors are explicit rejections and should be shown.
+      // Network disconnects (status: 0 or no status) are allowed to continue into polling.
+      if (isExplicitApiError(error)) {
         activationState.value = 'failed'
         activationMessage.value = extractErrorMessage(error, t('version.activationFailed'))
         return

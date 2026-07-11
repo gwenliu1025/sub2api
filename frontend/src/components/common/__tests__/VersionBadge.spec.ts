@@ -366,6 +366,21 @@ describe('VersionBadge', () => {
     expect(reload).toHaveBeenCalledOnce()
   })
 
+  it('shows a structured binary business error without polling', async () => {
+    adminSystemMocks.restartService.mockRejectedValueOnce({
+      status: 409,
+      code: 'UPDATE_BUSY',
+      message: 'Another update is in progress'
+    })
+
+    const wrapper = await prepareAndRestart('binary')
+
+    expect(activationMocks.waitForUpdateActivation).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('version.activationFailed')
+    expect(wrapper.text()).toContain('Another update is in progress')
+  })
+
   it('shows a structured docker business error without polling', async () => {
     adminSystemMocks.restartService.mockRejectedValueOnce({
       status: 409,
