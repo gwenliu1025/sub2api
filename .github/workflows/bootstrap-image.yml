@@ -36,22 +36,14 @@ jobs:
       OCI_SOURCE: https://github.com/gwenliu1025/sub2api
       IMAGE_REPOSITORY: ghcr.io/gwenliu1025/sub2api
     steps:
+      - name: Check out workflow validation
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
       - name: Validate inputs
         shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$REPORTED_VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || {
-            echo "reported_version must match ^[0-9]+(\.[0-9]+)+$" >&2
-            exit 1
-          }
-          [[ "$IMAGE_TAG" =~ ^[A-Za-z0-9_.-]+$ ]] || {
-            echo "image_tag must match ^[A-Za-z0-9_.-]+$" >&2
-            exit 1
-          }
-          [[ "$IMAGE_TAG" == bootstrap-* ]] || {
-            echo "image_tag must start with bootstrap-" >&2
-            exit 1
-          }
+        run: .github/scripts/validate-bootstrap-image-inputs.sh "$REPORTED_VERSION" "$IMAGE_TAG" "$FORCE_UNHEALTHY_HEALTHCHECK"
 
       - name: Check out requested ref
         uses: actions/checkout@v6
