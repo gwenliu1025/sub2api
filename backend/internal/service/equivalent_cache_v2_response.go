@@ -125,7 +125,7 @@ func applyEquivalentCacheV2JSON(
 }
 
 func logEquivalentCacheV2ShadowResult(
-	ctx context.Context,
+	_ context.Context,
 	plan equivalentCacheV2ResponsePlan,
 	planEnabled bool,
 	outcome string,
@@ -135,7 +135,7 @@ func logEquivalentCacheV2ShadowResult(
 	if !planEnabled || plan.Config.Mode != equivalentCacheV2ModeShadow {
 		return
 	}
-	logger.FromContext(ctx).Info("equivalent_cache_v2.shadow_result",
+	logger.L().Info("equivalent_cache_v2.shadow_result",
 		zap.Int64("account_id", plan.AccountID),
 		zap.String("outcome", outcome),
 		zap.Int16("allocation_kind", int16(kind)),

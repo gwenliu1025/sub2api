@@ -790,6 +790,15 @@ func (s *GatewayService) prepareEquivalentCacheV2BillingResults(
 		result.UsageAllocationVersion != equivalentCacheV2AlgorithmVersion {
 		return nil, nil, false
 	}
+	if !equivalentCacheV2RawSnapshotValid(result) {
+		fallbackValue := *result
+		fallbackValue.RawUsage = ClaudeUsage{}
+		fallbackValue.ResponseUsage = ClaudeUsage{}
+		fallbackValue.UsageAllocationVersion = 0
+		fallbackValue.UsageAllocationKind = UsageAllocationKindNone
+		fallbackResult := &fallbackValue
+		return fallbackResult, fallbackResult, false
+	}
 
 	rawUsage := cloneClaudeUsage(result.RawUsage)
 	rawResultValue := *result
@@ -843,6 +852,26 @@ func (s *GatewayService) prepareEquivalentCacheV2BillingResults(
 	responseResultValue.ResponseUsage = cloneClaudeUsage(result.ResponseUsage)
 	responseResult = &responseResultValue
 	return rawResult, responseResult, true
+}
+
+func equivalentCacheV2RawSnapshotValid(result *ForwardResult) bool {
+	if result == nil {
+		return false
+	}
+
+	rawUsage := result.RawUsage
+	if rawUsage.InputTokens <= 0 ||
+		hasNonZeroCacheUsage(rawUsage) {
+		return false
+	}
+	if _, ok := fixedInputCostUnits(rawUsage); !ok {
+		return false
+	}
+
+	if rawUsage.OutputTokens == 0 && result.ResponseUsage.OutputTokens != 0 {
+		return false
+	}
+	return true
 }
 
 // calculateRecordUsageCost 根据请求类型和选项计算费用。

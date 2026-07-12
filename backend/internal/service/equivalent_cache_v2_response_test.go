@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 )
 
 type equivalentCacheV2ResponseStateStoreStub struct {
@@ -105,8 +104,14 @@ func TestEquivalentCacheV2Response_ShadowComputesButReturnsRawBodyAndUsage(t *te
 	store := &equivalentCacheV2ResponseStateStoreStub{
 		decision: EquivalentCacheV2StateDecision{Create: true, Generation: 4},
 	}
-	core, observed := observer.New(zap.InfoLevel)
-	ctx := logger.IntoContext(context.Background(), zap.New(core))
+	sink, restoreLogs := captureStructuredLog(t)
+	defer restoreLogs()
+	ctx := logger.IntoContext(context.Background(), logger.L().With(
+		zap.String("request_id", "request-context-id"),
+		zap.String("client_request_id", "client-context-id"),
+		zap.String("path", "/v1/messages"),
+		zap.String("method", http.MethodPost),
+	))
 
 	result := applyEquivalentCacheV2JSON(ctx, body, "usage", equivalentCacheV2ResponsePlan{
 		Config: equivalentCacheV2Config{
@@ -133,22 +138,29 @@ func TestEquivalentCacheV2Response_ShadowComputesButReturnsRawBodyAndUsage(t *te
 	require.Empty(t, result.HeaderValue())
 	require.Equal(t, 1, store.calls)
 
-	entries := observed.FilterMessage("equivalent_cache_v2.shadow_result").All()
-	require.Len(t, entries, 1)
-	fields := entries[0].ContextMap()
+	fields := equivalentCacheV2ShadowLogFields(t, sink)
 	require.Equal(t, int64(701), fields["account_id"])
 	require.Equal(t, "allocated", fields["outcome"])
 	require.Equal(t, int16(UsageAllocationKindCreate1h), fields["allocation_kind"])
 	require.Equal(t, true, fields["cost_conserved"])
 	require.NotContains(t, fields, "request_id")
+	require.NotContains(t, fields, "client_request_id")
+	require.NotContains(t, fields, "path")
+	require.NotContains(t, fields, "method")
 	require.NotContains(t, fields, "session_key")
 	require.NotContains(t, fields, "raw_usage")
 }
 
 func TestEquivalentCacheV2Response_ShadowLogsInvalidUsageWithoutSensitiveFields(t *testing.T) {
 	body := []byte(`{"usage":{"input_tokens":2.5,"output_tokens":8}}`)
-	core, observed := observer.New(zap.InfoLevel)
-	ctx := logger.IntoContext(context.Background(), zap.New(core))
+	sink, restoreLogs := captureStructuredLog(t)
+	defer restoreLogs()
+	ctx := logger.IntoContext(context.Background(), logger.L().With(
+		zap.String("request_id", "request-context-id"),
+		zap.String("client_request_id", "client-context-id"),
+		zap.String("path", "/v1/messages"),
+		zap.String("method", http.MethodPost),
+	))
 
 	result := applyEquivalentCacheV2JSON(ctx, body, "usage", equivalentCacheV2ResponsePlan{
 		Config: equivalentCacheV2Config{
@@ -168,16 +180,30 @@ func TestEquivalentCacheV2Response_ShadowLogsInvalidUsageWithoutSensitiveFields(
 
 	require.False(t, result.Allocated)
 	require.Equal(t, body, result.Body)
-	entries := observed.FilterMessage("equivalent_cache_v2.shadow_result").All()
-	require.Len(t, entries, 1)
-	fields := entries[0].ContextMap()
+	fields := equivalentCacheV2ShadowLogFields(t, sink)
 	require.Equal(t, int64(702), fields["account_id"])
 	require.Equal(t, "usage_invalid", fields["outcome"])
 	require.Equal(t, int16(UsageAllocationKindNone), fields["allocation_kind"])
 	require.Equal(t, false, fields["cost_conserved"])
 	require.NotContains(t, fields, "request_id")
+	require.NotContains(t, fields, "client_request_id")
+	require.NotContains(t, fields, "path")
+	require.NotContains(t, fields, "method")
 	require.NotContains(t, fields, "session_key")
 	require.NotContains(t, fields, "raw_usage")
+}
+
+func equivalentCacheV2ShadowLogFields(t *testing.T, sink *inMemoryLogSink) map[string]any {
+	t.Helper()
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	for _, event := range sink.events {
+		if event != nil && event.Message == "equivalent_cache_v2.shadow_result" {
+			return event.Fields
+		}
+	}
+	require.FailNow(t, "missing equivalent cache v2 shadow result log")
+	return nil
 }
 
 func TestEquivalentCacheV2Response_InvalidOrRealCacheUsageFallsBackUntouched(t *testing.T) {
