@@ -5,9 +5,9 @@
 - `gwenliu1025/sub2api` is the release source for this fork. Upstream changes
   are merged into this repository first; production artifacts must be built
   only from this repository.
-- The current release target is `v0.1.150`. Its application version is
-  `0.1.150`, and its only GHCR image tag is
-  `ghcr.io/gwenliu1025/sub2api:0.1.150`.
+- The current release target is `v0.1.151`. Its application version is
+  `0.1.151`, and its only GHCR image tag is
+  `ghcr.io/gwenliu1025/sub2api:0.1.151`.
 - Every future release follows the same exact mapping:
   `vX.Y.Z` -> `X.Y.Z` -> `ghcr.io/gwenliu1025/sub2api:X.Y.Z`.
 - Do not publish or reference `latest`, major-only, minor-only,
@@ -34,6 +34,6 @@
 
 ## Current Scope
 
-- Finish and publish `v0.1.150` from this fork.
-- Do not make frontend redesign changes, merge `v0.1.151`, deploy to any
-  server, change DNS, or migrate machines as part of this release task.
+- Finish and publish `v0.1.151` from this fork.
+- Do not make frontend redesign changes, deploy to any server, change DNS, or
+  migrate machines as part of this release task.
