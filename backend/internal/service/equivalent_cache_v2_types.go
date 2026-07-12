@@ -8,6 +8,7 @@ import (
 
 const (
 	equivalentCacheV2AlgorithmVersion int16 = 2
+	EquivalentCacheV2AlgorithmVersion       = equivalentCacheV2AlgorithmVersion
 
 	equivalentCacheV2InputUnit    int64 = 500
 	equivalentCacheV2OutputUnit   int64 = 2500

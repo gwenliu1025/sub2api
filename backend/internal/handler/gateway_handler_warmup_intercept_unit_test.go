@@ -167,6 +167,7 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // claudeTokenProvider
 		nil, // sessionLimitCache
 		nil, // rpmCache
+		nil, // equivalentCacheV2StateStore
 		nil, // digestStore
 		nil, // settingService
 		nil, // tlsFPProfileService
