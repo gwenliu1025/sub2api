@@ -88,36 +88,42 @@ node scripts/sub2api-admin.js accounts batch-clear-error --ids 40,39
 
 `bulk-update` 可覆盖页面“批量更新”的字段，payload 由后台表单字段决定，例如 `base_url`、`model_mapping`、`group_ids`、`proxy_id`、`concurrency`、`priority`、`rate_multiplier`、`status`、`compact_mode` 等。更新前先用 `accounts get <id>` 确认字段名。
 
-### Kiro equivalent cache billing
+### Kiro equivalent cache V2
 
 Use only for self-owned Kiro accounts. Do not enable for external Kiro upstream accounts, and do not route `cloudflare-temp-email` through the relay network. Production entry machines are read-only for this workflow.
 
-Prefer `bulk-update` for this toggle because it merges `extra` keys. Single-account `accounts update --json '{"extra":{...}}'` replaces the entire `extra` object.
+Use `bulk-update` because it merges top-level `extra` keys and preserves unrelated runtime configuration. The nested `equivalent_cache_allocation_v2` object is one top-level value; read the account first and resend the complete nested object whenever changing a subkey. Single-account `accounts update --json '{"extra":{...}}'` replaces the entire `extra` object.
 
-Enable:
+Start in shadow:
 
 ```bash
 node scripts/sub2api-admin.js accounts list --search '<kiro-account-name>' --page-size 20
 node scripts/sub2api-admin.js accounts get <account-id>
 node scripts/sub2api-admin.js accounts bulk-update --ids <account-id> --json '{
   "extra": {
-    "equivalent_cache_billing_enabled": true,
-    "equivalent_cache_billing_loss_factor": 1.08,
-    "equivalent_cache_billing_input_share": 0.20,
-    "equivalent_cache_billing_cache_read_share": 0.75,
-    "equivalent_cache_billing_cache_creation_share": 0.05
+    "equivalent_cache_allocation_v2": {
+      "enabled": true,
+      "mode": "shadow",
+      "pricing_profile": "kiro_unified_5_25_0_6_6_25_10",
+      "visible_rate_min": 0.96,
+      "visible_rate_max": 0.999,
+      "kiro_go_pool_confirmed": true
+    }
   }
 }'
 node scripts/sub2api-admin.js accounts get <account-id>
 ```
 
-Disable:
+Keep `mode` at `shadow` by default. Changing it to `active` requires separate explicit authorization after shadow verification. When changing the mode, resend the full nested object above with only `"mode": "active"` changed.
+
+Rollback:
 
 ```bash
-node scripts/sub2api-admin.js accounts bulk-update --ids <account-id> --json '{"extra":{"equivalent_cache_billing_enabled":false}}'
+node scripts/sub2api-admin.js accounts bulk-update --ids <account-id> --json '{"extra":{"equivalent_cache_allocation_v2":{"enabled":false}}}'
+node scripts/sub2api-admin.js accounts get <account-id>
 ```
 
-Full runbook: `../../../docs/EQUIVALENT_CACHE_BILLING_CN.md`.
+Rollback takes effect without restarting PostgreSQL, Redis, Caddy, Kiro-Go, or unrelated services. Legacy equivalent-cache keys cannot activate V2 and must not be used.
 
 ### 导入
 

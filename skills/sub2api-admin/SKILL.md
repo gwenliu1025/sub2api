@@ -33,7 +33,6 @@ node scripts/sub2api-admin.js accounts get 40
 node scripts/sub2api-admin.js accounts usage 40
 node scripts/sub2api-admin.js accounts set-schedulable 40 true
 node scripts/sub2api-admin.js accounts bulk-update --ids 40,39 --json '{"concurrency":10}'
-node scripts/sub2api-admin.js accounts bulk-update --ids 40 --json '{"extra":{"equivalent_cache_billing_enabled":true}}'
 node scripts/sub2api-admin.js redeem-codes list --page-size 20
 node scripts/sub2api-admin.js redeem-codes generate --json '{"count":1,"type":"balance","value":10}' --idempotency-key redeem-$(date +%s)
 node scripts/sub2api-admin.js redeem-codes create-and-redeem --json '{"code":"order_123","type":"balance","value":10,"user_id":123}' --idempotency-key order-123
@@ -41,20 +40,20 @@ node scripts/sub2api-admin.js error-rules list
 node scripts/sub2api-admin.js tls-profiles list
 ```
 
-## Kiro Equivalent Cache Billing
+## Kiro Equivalent Cache V2
 
 Use this only for self-owned Kiro accounts in new-machine or warmup environments. Production entry machines are read-only for this workflow; do not stop, restart, or mutate them.
 
 1. Verify the target first: `accounts list --search <name>` and `accounts get <id>`.
-2. Enable with key-level merge:
-   `accounts bulk-update --ids <id> --json '{"extra":{"equivalent_cache_billing_enabled":true,"equivalent_cache_billing_loss_factor":1.08,"equivalent_cache_billing_input_share":0.20,"equivalent_cache_billing_cache_read_share":0.75,"equivalent_cache_billing_cache_creation_share":0.05}}'`
-3. Disable with:
-   `accounts bulk-update --ids <id> --json '{"extra":{"equivalent_cache_billing_enabled":false}}'`
-4. Re-run `accounts get <id>` and verify usage logs/front-end cache display after one or two test requests.
+2. Start in `shadow` with the complete nested V2 object:
+   `accounts bulk-update --ids <id> --json '{"extra":{"equivalent_cache_allocation_v2":{"enabled":true,"mode":"shadow","pricing_profile":"kiro_unified_5_25_0_6_6_25_10","visible_rate_min":0.96,"visible_rate_max":0.999,"kiro_go_pool_confirmed":true}}}'`
+3. Re-run `accounts get <id>` and verify the complete nested object. Observe shadow results before requesting separate authorization to change `mode` to `active`.
+4. Roll back without restarting services:
+   `accounts bulk-update --ids <id> --json '{"extra":{"equivalent_cache_allocation_v2":{"enabled":false}}}'`
 
-Do not enable it for external Kiro upstream accounts. Do not route `cloudflare-temp-email` through the relay network. Prefer `bulk-update` for extra-only changes because it merges keys; `accounts update` replaces the whole `extra` object.
+`bulk-update` merges keys at the top level of `extra`, preserving unrelated runtime configuration. The nested `equivalent_cache_allocation_v2` object is one top-level value, so fetch the current account and resend the complete nested object whenever changing one of its subkeys. Do not use a partial nested object for shadow-to-active changes.
 
-Full runbook: [docs/EQUIVALENT_CACHE_BILLING_CN.md](../../docs/EQUIVALENT_CACHE_BILLING_CN.md).
+Do not enable V2 for external Kiro upstream accounts. Do not route `cloudflare-temp-email` through the relay network. Legacy equivalent-cache keys cannot activate V2 and must not be used.
 
 ## Safety Notes
 
