@@ -5,7 +5,6 @@ package service
 import (
 	"context"
 	"errors"
-	"math"
 	"strings"
 	"testing"
 	"time"
@@ -144,55 +143,193 @@ func TestGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloadHash(
 	require.Equal(t, payloadHash, billingRepo.lastCmd.RequestPayloadHash)
 }
 
-func TestGatewayServiceRecordUsage_EquivalentCacheBillingRewritesUsageBeforeCostAndBilling(t *testing.T) {
+func TestGatewayServiceRecordUsage_EquivalentCacheV2LocksRawCostAndLogsResponseUsage(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	groupID := int64(901)
+	model := "claude-sonnet-4"
+	configureEquivalentCacheV2RecordUsagePricing(t, svc, groupID, model, 701)
+	quotaService := &openAIRecordUsageAPIKeyQuotaStub{}
 
-	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+	raw := ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}
+	allocation, ok := allocateEquivalentCacheV2(equivalentCacheV2AllocationInput{
+		RawUsage:          raw,
+		Kind:              UsageAllocationKindReadMajor,
+		RequestID:         "gateway_equivalent_cache_v2",
+		AccountID:         701,
+		SessionGeneration: 2,
+		VisibleRateMinPPM: equivalentCacheV2DefaultVisibleRateMinPPM,
+		VisibleRateMaxPPM: equivalentCacheV2DefaultVisibleRateMaxPPM,
+	})
+	require.True(t, ok)
+	require.True(t, allocation.Valid())
+
+	expectedCost, err := svc.billingService.CalculateCost(model, UsageTokens{
+		InputTokens:           raw.InputTokens,
+		OutputTokens:          raw.OutputTokens,
+		CacheCreationTokens:   raw.CacheCreationInputTokens,
+		CacheReadTokens:       raw.CacheReadInputTokens,
+		CacheCreation5mTokens: raw.CacheCreation5mTokens,
+		CacheCreation1hTokens: raw.CacheCreation1hTokens,
+	}, 1.1)
+	require.NoError(t, err)
+
+	err = svc.RecordUsage(context.Background(), &RecordUsageInput{
 		Result: &ForwardResult{
-			RequestID: "gateway_equivalent_cache_billing",
-			Usage: ClaudeUsage{
-				InputTokens:  2000,
-				OutputTokens: 100,
-			},
-			Model:    "claude-sonnet-4",
-			Duration: time.Second,
+			RequestID:              "gateway_equivalent_cache_v2",
+			Usage:                  cloneClaudeUsage(allocation.ResponseUsage),
+			RawUsage:               cloneClaudeUsage(raw),
+			ResponseUsage:          cloneClaudeUsage(allocation.ResponseUsage),
+			UsageAllocationVersion: equivalentCacheV2AlgorithmVersion,
+			UsageAllocationKind:    allocation.Kind,
+			Model:                  model,
+			Duration:               time.Second,
 		},
-		APIKey: &APIKey{ID: 501, Quota: 100},
-		User:   &User{ID: 601},
-		Account: &Account{
-			ID: 701,
-			Extra: map[string]any{
-				equivalentCacheBillingEnabledKey: true,
+		APIKey: &APIKey{
+			ID:      501,
+			Quota:   100,
+			GroupID: &groupID,
+			Group: &Group{
+				ID:             groupID,
+				RateMultiplier: 1.1,
 			},
 		},
+		User:          &User{ID: 601},
+		Account:       equivalentCacheV2RecordUsageAccount(701, equivalentCacheV2ModeActive),
+		APIKeyService: quotaService,
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.NotNil(t, billingRepo.lastCmd)
 
-	require.Less(t, usageRepo.lastLog.InputTokens, 2000)
-	require.Greater(t, usageRepo.lastLog.CacheReadTokens, 0)
-	require.Greater(t, usageRepo.lastLog.CacheCreationTokens, 0)
-	require.Equal(t, int(math.Ceil(100*1.08)), usageRepo.lastLog.OutputTokens)
-
-	promptTokens := usageRepo.lastLog.InputTokens + usageRepo.lastLog.CacheReadTokens + usageRepo.lastLog.CacheCreationTokens
-	cacheRate := float64(usageRepo.lastLog.CacheReadTokens) / float64(promptTokens)
-	require.GreaterOrEqual(t, cacheRate, 0.95)
+	require.Equal(t, allocation.ResponseUsage.InputTokens, usageRepo.lastLog.InputTokens)
+	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
+	require.Equal(t, allocation.ResponseUsage.CacheReadInputTokens, usageRepo.lastLog.CacheReadTokens)
+	require.Equal(t, allocation.ResponseUsage.CacheCreationInputTokens, usageRepo.lastLog.CacheCreationTokens)
+	require.Equal(t, allocation.ResponseUsage.CacheCreation5mTokens, usageRepo.lastLog.CacheCreation5mTokens)
+	require.Equal(t, allocation.ResponseUsage.CacheCreation1hTokens, usageRepo.lastLog.CacheCreation1hTokens)
 
 	require.Equal(t, usageRepo.lastLog.InputTokens, billingRepo.lastCmd.InputTokens)
 	require.Equal(t, usageRepo.lastLog.OutputTokens, billingRepo.lastCmd.OutputTokens)
 	require.Equal(t, usageRepo.lastLog.CacheReadTokens, billingRepo.lastCmd.CacheReadTokens)
 	require.Equal(t, usageRepo.lastLog.CacheCreationTokens, billingRepo.lastCmd.CacheCreationTokens)
 
-	expectedPromptCost := float64(usageRepo.lastLog.InputTokens)*3e-6 +
-		float64(usageRepo.lastLog.CacheReadTokens)*0.3e-6 +
-		float64(usageRepo.lastLog.CacheCreationTokens)*3.75e-6
-	expectedOutputCost := float64(usageRepo.lastLog.OutputTokens) * 15e-6
-	require.InDelta(t, expectedPromptCost+expectedOutputCost, usageRepo.lastLog.TotalCost, 1e-12)
-	require.InDelta(t, (expectedPromptCost+expectedOutputCost)*1.1, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, expectedCost.InputCost, usageRepo.lastLog.InputCost, 1e-12)
+	require.InDelta(t, expectedCost.OutputCost, usageRepo.lastLog.OutputCost, 1e-12)
+	require.InDelta(t, expectedCost.CacheCreationCost, usageRepo.lastLog.CacheCreationCost, 1e-12)
+	require.InDelta(t, expectedCost.CacheReadCost, usageRepo.lastLog.CacheReadCost, 1e-12)
+	require.InDelta(t, expectedCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.APIKeyQuotaCost, 1e-12)
+
+	require.NotNil(t, usageRepo.lastLog.AccountStatsCost)
+	expectedAccountStatsCost := float64(raw.InputTokens)*1e-6 + float64(raw.OutputTokens)*2e-6
+	require.InDelta(t, expectedAccountStatsCost, *usageRepo.lastLog.AccountStatsCost, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_EquivalentCacheV2ShadowLogsRawUsageAndRawCost(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	groupID := int64(902)
+	model := "claude-sonnet-4"
+	configureEquivalentCacheV2RecordUsagePricing(t, svc, groupID, model, 702)
+
+	raw := ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}
+	expectedCost, err := svc.billingService.CalculateCost(model, UsageTokens{
+		InputTokens:  raw.InputTokens,
+		OutputTokens: raw.OutputTokens,
+	}, 1.1)
+	require.NoError(t, err)
+
+	err = svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:     "gateway_equivalent_cache_v2_shadow",
+			Usage:         cloneClaudeUsage(raw),
+			RawUsage:      cloneClaudeUsage(raw),
+			ResponseUsage: cloneClaudeUsage(raw),
+			Model:         model,
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      502,
+			Quota:   100,
+			GroupID: &groupID,
+			Group:   &Group{ID: groupID, RateMultiplier: 1.1},
+		},
+		User:    &User{ID: 602},
+		Account: equivalentCacheV2RecordUsageAccount(702, equivalentCacheV2ModeShadow),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Equal(t, raw.InputTokens, usageRepo.lastLog.InputTokens)
+	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
+	require.Zero(t, usageRepo.lastLog.CacheReadTokens)
+	require.Zero(t, usageRepo.lastLog.CacheCreationTokens)
+	require.InDelta(t, expectedCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
+func equivalentCacheV2RecordUsageAccount(id int64, mode equivalentCacheV2Mode) *Account {
+	return &Account{
+		ID: id,
+		Extra: map[string]any{
+			equivalentCacheV2ExtraKey: map[string]any{
+				"enabled":                true,
+				"mode":                   string(mode),
+				"pricing_profile":        equivalentCacheV2PricingProfile,
+				"kiro_go_pool_confirmed": true,
+			},
+		},
+	}
+}
+
+func configureEquivalentCacheV2RecordUsagePricing(t *testing.T, svc *GatewayService, groupID int64, model string, accountID int64) {
+	t.Helper()
+	inputPrice := 1e-6
+	outputPrice := 2e-6
+	cacheWritePrice := 3e-6
+	cacheReadPrice := 4e-6
+	cache := newEmptyChannelCache()
+	cache.channelByGroupID[groupID] = &Channel{
+		ID:     groupID,
+		Status: StatusActive,
+		AccountStatsPricingRules: []AccountStatsPricingRule{{
+			AccountIDs: []int64{accountID},
+			Pricing: []ChannelModelPricing{{
+				Models:          []string{model},
+				BillingMode:     BillingModeToken,
+				InputPrice:      &inputPrice,
+				OutputPrice:     &outputPrice,
+				CacheWritePrice: &cacheWritePrice,
+				CacheReadPrice:  &cacheReadPrice,
+			}},
+		}},
+	}
+	cache.groupPlatform[groupID] = PlatformAnthropic
+	cache.loadedAt = time.Now()
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+
+	billingService := &BillingService{fallbackPrices: map[string]*ModelPricing{
+		model: {
+			InputPricePerToken:     5e-6,
+			OutputPricePerToken:    25e-6,
+			CacheReadPricePerToken: 0.6e-6,
+			CacheCreation5mPrice:   6.25e-6,
+			CacheCreation1hPrice:   10e-6,
+			SupportsCacheBreakdown: true,
+		},
+	}}
+	svc.channelService = channelService
+	svc.billingService = billingService
+	svc.resolver = NewModelPricingResolver(channelService, billingService)
 }
 
 func TestGatewayServiceRecordUsage_BillingFingerprintFallsBackToContextRequestID(t *testing.T) {

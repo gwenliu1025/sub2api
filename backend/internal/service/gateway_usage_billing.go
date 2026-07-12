@@ -631,42 +631,16 @@ type recordUsageCoreInput struct {
 // recordUsageCore 是 RecordUsage 和 RecordUsageWithLongContext 的统一实现。
 // LongContextThreshold > 0 时 Token 计费回退走 CalculateCostWithLongContext。
 func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsageCoreInput, opts *recordUsageOpts) error {
-	result := input.Result
+	resultValue := *input.Result
+	resultValue.Usage = cloneClaudeUsage(input.Result.Usage)
+	resultValue.RawUsage = cloneClaudeUsage(input.Result.RawUsage)
+	resultValue.ResponseUsage = cloneClaudeUsage(input.Result.ResponseUsage)
+	result := &resultValue
 	apiKey := input.APIKey
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
 	ApplyForwardImageBillingResolution(result)
-
-	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
-	// 用于粘性会话切换时的特殊计费处理
-	if input.ForceCacheBilling && result.Usage.InputTokens > 0 {
-		logger.LegacyPrintf("service.gateway", "force_cache_billing: %d input_tokens → cache_read_input_tokens (account=%d)",
-			result.Usage.InputTokens, account.ID)
-		result.Usage.CacheReadInputTokens += result.Usage.InputTokens
-		result.Usage.InputTokens = 0
-	}
-
-	// Cache TTL Override: 确保计费时 token 分类与账号设置一致。
-	// 账号级设置优先；全局 1h 请求注入开启时，默认把 usage 计费归回 5m。
-	cacheTTLOverridden := false
-	if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
-		applyCacheTTLOverride(&result.Usage, overrideTarget)
-		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
-	}
-
-	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
-	multiplier := 1.0
-	if s.cfg != nil {
-		multiplier = s.cfg.Default.RateMultiplier
-	}
-	if apiKey.GroupID != nil && apiKey.Group != nil {
-		groupDefault := apiKey.Group.RateMultiplier
-		multiplier = s.getUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
-	}
-	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
-	// 不并入上面的 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
-	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
 
 	// 确定计费模型
 	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
@@ -683,8 +657,51 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		requestedModel = input.OriginalModel
 	}
 
+	billingResult := result
+	logResult := result
+	accountStatsResult := result
+	equivalentCacheV2Billing := false
+	if rawResult, responseResult, ok := s.prepareEquivalentCacheV2BillingResults(ctx, result, apiKey, account, billingModel); ok {
+		billingResult = rawResult
+		logResult = responseResult
+		accountStatsResult = rawResult
+		equivalentCacheV2Billing = true
+	}
+
+	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
+	// 用于粘性会话切换时的特殊计费处理
+	if !equivalentCacheV2Billing && input.ForceCacheBilling && result.Usage.InputTokens > 0 {
+		logger.LegacyPrintf("service.gateway", "force_cache_billing: %d input_tokens → cache_read_input_tokens (account=%d)",
+			result.Usage.InputTokens, account.ID)
+		result.Usage.CacheReadInputTokens += result.Usage.InputTokens
+		result.Usage.InputTokens = 0
+	}
+
+	// Cache TTL Override: 确保计费时 token 分类与账号设置一致。
+	// 账号级设置优先；全局 1h 请求注入开启时，默认把 usage 计费归回 5m。
+	cacheTTLOverridden := false
+	if !equivalentCacheV2Billing {
+		if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
+			applyCacheTTLOverride(&result.Usage, overrideTarget)
+			cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
+		}
+	}
+
+	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
+	multiplier := 1.0
+	if s.cfg != nil {
+		multiplier = s.cfg.Default.RateMultiplier
+	}
+	if apiKey.GroupID != nil && apiKey.Group != nil {
+		groupDefault := apiKey.Group.RateMultiplier
+		multiplier = s.getUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
+	}
+	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
+	// 不并入上面的 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
+	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
+
 	// 计算费用
-	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
+	cost := s.calculateRecordUsageCost(ctx, billingResult, apiKey, billingModel, multiplier, imageMultiplier, opts)
 
 	// 判断计费方式：订阅模式 vs 余额模式
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
@@ -695,21 +712,21 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	// 创建使用日志
 	accountRateMultiplier := account.BillingRateMultiplier()
-	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
+	usageLog := s.buildRecordUsageLog(ctx, input, logResult, apiKey, user, account, subscription,
 		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
 		applyAccountStatsCost(ctx, usageLog, s.channelService, s.billingService,
-			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
+			account.ID, *apiKey.GroupID, accountStatsResult.UpstreamModel, accountStatsResult.Model,
 			// Anthropic's input_tokens excludes cache_read and cache_creation (billed separately);
 			// OpenAI gateway uses actualInputTokens which also excludes cache_read for the same reason.
 			UsageTokens{
-				InputTokens:         result.Usage.InputTokens,
-				OutputTokens:        result.Usage.OutputTokens,
-				CacheCreationTokens: result.Usage.CacheCreationInputTokens,
-				CacheReadTokens:     result.Usage.CacheReadInputTokens,
-				ImageOutputTokens:   result.Usage.ImageOutputTokens,
+				InputTokens:         accountStatsResult.Usage.InputTokens,
+				OutputTokens:        accountStatsResult.Usage.OutputTokens,
+				CacheCreationTokens: accountStatsResult.Usage.CacheCreationInputTokens,
+				CacheReadTokens:     accountStatsResult.Usage.CacheReadInputTokens,
+				ImageOutputTokens:   accountStatsResult.Usage.ImageOutputTokens,
 			},
 			cost.TotalCost,
 		)
@@ -749,6 +766,75 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 
 	return nil
+}
+
+func (s *GatewayService) prepareEquivalentCacheV2BillingResults(
+	ctx context.Context,
+	result *ForwardResult,
+	apiKey *APIKey,
+	account *Account,
+	billingModel string,
+) (*ForwardResult, *ForwardResult, bool) {
+	cfg, ok := equivalentCacheV2ConfigFromAccount(account)
+	if !ok ||
+		result == nil ||
+		apiKey == nil ||
+		apiKey.GroupID == nil ||
+		s == nil ||
+		s.resolver == nil ||
+		strings.TrimSpace(billingModel) == "" {
+		return nil, nil, false
+	}
+
+	resolved := s.resolver.Resolve(ctx, PricingInput{
+		Model:   billingModel,
+		GroupID: apiKey.GroupID,
+	})
+	if !equivalentCacheV2ResolvedPricingEligible(resolved) {
+		return nil, nil, false
+	}
+
+	zeroUsage := ClaudeUsage{}
+	if result.RawUsage == zeroUsage && result.ResponseUsage == zeroUsage && result.Usage != zeroUsage {
+		return nil, nil, false
+	}
+
+	rawUsage := cloneClaudeUsage(result.RawUsage)
+	responseUsage := cloneClaudeUsage(rawUsage)
+	allocationValid := false
+	if cfg.Mode == equivalentCacheV2ModeActive &&
+		result.UsageAllocationVersion == equivalentCacheV2AlgorithmVersion {
+		rawCostUnits, rawCostOK := fixedInputCostUnits(rawUsage)
+		allocation := EquivalentCacheAllocation{
+			Version:        result.UsageAllocationVersion,
+			Kind:           result.UsageAllocationKind,
+			RawUsage:       cloneClaudeUsage(rawUsage),
+			ResponseUsage:  cloneClaudeUsage(result.ResponseUsage),
+			InputCostUnits: rawCostUnits,
+		}
+		if rawCostOK && allocation.Valid() {
+			responseUsage = cloneClaudeUsage(result.ResponseUsage)
+			allocationValid = true
+		}
+	}
+
+	rawResultValue := *result
+	rawResultValue.Usage = cloneClaudeUsage(rawUsage)
+	rawResultValue.RawUsage = cloneClaudeUsage(rawUsage)
+	rawResultValue.ResponseUsage = cloneClaudeUsage(rawUsage)
+	rawResult := &rawResultValue
+
+	responseResultValue := *result
+	responseResultValue.Usage = cloneClaudeUsage(responseUsage)
+	responseResultValue.RawUsage = cloneClaudeUsage(rawUsage)
+	responseResultValue.ResponseUsage = cloneClaudeUsage(responseUsage)
+	if !allocationValid {
+		responseResultValue.UsageAllocationVersion = 0
+		responseResultValue.UsageAllocationKind = UsageAllocationKindNone
+	}
+	responseResult := &responseResultValue
+
+	return rawResult, responseResult, true
 }
 
 // calculateRecordUsageCost 根据请求类型和选项计算费用。
