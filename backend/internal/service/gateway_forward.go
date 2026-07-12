@@ -782,11 +782,18 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		parsed.OnUpstreamAccepted()
 	}
 
-	var usage *ClaudeUsage
+	var responseResult *equivalentCacheV2ResponseResult
 	var firstTokenMs *int
 	var clientDisconnect bool
+	responsePlan := s.prepareEquivalentCacheV2ResponsePlan(
+		ctx,
+		account,
+		parsed,
+		originalModel,
+		resp.Header.Get("x-request-id"),
+	)
 	if reqStream {
-		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode)
+		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode, responsePlan)
 		if err != nil {
 			var sseErr *sseStreamErrorEventError
 			if errors.As(err, &sseErr) {
@@ -832,25 +839,36 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			}
 			return nil, err
 		}
-		usage = streamResult.usage
+		responseResult = &equivalentCacheV2ResponseResult{
+			RawUsage:      cloneClaudeUsage(streamResult.rawUsage),
+			ResponseUsage: cloneClaudeUsage(streamResult.responseUsage),
+			Version:       streamResult.usageAllocationVersion,
+			Kind:          streamResult.usageAllocationKind,
+			Allocated:     streamResult.usageAllocationVersion == equivalentCacheV2AlgorithmVersion,
+			UsageValid:    true,
+		}
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
 	} else {
-		usage, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel)
+		responseResult, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel, responsePlan)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return &ForwardResult{
-		RequestID:        resp.Header.Get("x-request-id"),
-		Usage:            *usage,
-		Model:            originalModel, // 使用原始模型用于计费和日志
-		UpstreamModel:    mappedModel,
-		Stream:           reqStream,
-		Duration:         time.Since(startTime),
-		FirstTokenMs:     firstTokenMs,
-		ClientDisconnect: clientDisconnect,
+		RequestID:              resp.Header.Get("x-request-id"),
+		Usage:                  cloneClaudeUsage(responseResult.ResponseUsage),
+		RawUsage:               cloneClaudeUsage(responseResult.RawUsage),
+		ResponseUsage:          cloneClaudeUsage(responseResult.ResponseUsage),
+		UsageAllocationVersion: responseResult.Version,
+		UsageAllocationKind:    responseResult.Kind,
+		Model:                  originalModel, // 使用原始模型用于计费和日志
+		UpstreamModel:          mappedModel,
+		Stream:                 reqStream,
+		Duration:               time.Since(startTime),
+		FirstTokenMs:           firstTokenMs,
+		ClientDisconnect:       clientDisconnect,
 	}, nil
 }
 

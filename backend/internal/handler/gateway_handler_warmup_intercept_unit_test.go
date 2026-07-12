@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -25,10 +28,14 @@ import (
 // 后端会在转发上游前直接拦截并返回 mock 响应（不依赖上游）。
 
 type fakeSchedulerCache struct {
-	accounts []*service.Account
+	accounts        []*service.Account
+	accountsByGroup map[int64][]*service.Account
 }
 
-func (f *fakeSchedulerCache) GetSnapshot(_ context.Context, _ service.SchedulerBucket) ([]*service.Account, bool, error) {
+func (f *fakeSchedulerCache) GetSnapshot(_ context.Context, bucket service.SchedulerBucket) ([]*service.Account, bool, error) {
+	if f.accountsByGroup != nil {
+		return f.accountsByGroup[bucket.GroupID], true, nil
+	}
 	return f.accounts, true, nil
 }
 func (f *fakeSchedulerCache) SetSnapshot(_ context.Context, _ service.SchedulerBucket, _ []service.Account) error {
@@ -38,6 +45,13 @@ func (f *fakeSchedulerCache) GetAccount(_ context.Context, id int64) (*service.A
 	for _, account := range f.accounts {
 		if account != nil && account.ID == id {
 			return account, nil
+		}
+	}
+	for _, accounts := range f.accountsByGroup {
+		for _, account := range accounts {
+			if account != nil && account.ID == id {
+				return account, nil
+			}
 		}
 	}
 	return nil, nil
@@ -60,14 +74,21 @@ func (f *fakeSchedulerCache) GetOutboxWatermark(_ context.Context) (int64, error
 func (f *fakeSchedulerCache) SetOutboxWatermark(_ context.Context, _ int64) error { return nil }
 
 type fakeGroupRepo struct {
-	group *service.Group
+	group  *service.Group
+	groups map[int64]*service.Group
 }
 
 func (f *fakeGroupRepo) Create(context.Context, *service.Group) error { return nil }
-func (f *fakeGroupRepo) GetByID(context.Context, int64) (*service.Group, error) {
+func (f *fakeGroupRepo) GetByID(_ context.Context, id int64) (*service.Group, error) {
+	if f.groups != nil {
+		return f.groups[id], nil
+	}
 	return f.group, nil
 }
-func (f *fakeGroupRepo) GetByIDLite(context.Context, int64) (*service.Group, error) {
+func (f *fakeGroupRepo) GetByIDLite(_ context.Context, id int64) (*service.Group, error) {
+	if f.groups != nil {
+		return f.groups[id], nil
+	}
 	return f.group, nil
 }
 func (f *fakeGroupRepo) Update(context.Context, *service.Group) error          { return nil }
@@ -365,4 +386,143 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, "msg_mock_warmup", resp["id"])
 	require.Equal(t, "claude-sonnet-4-5", resp["model"])
+}
+
+type fallbackGroupHTTPUpstream struct{}
+
+func (u *fallbackGroupHTTPUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	if accountID == 1003 {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"X-Request-Id": []string{"req-prompt-too-long"}},
+			Body:       io.NopCloser(bytes.NewBufferString(`{"error":{"message":"Prompt is too long"}}`)),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(bytes.NewBufferString(
+			`{"id":"msg_fallback","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`,
+		)),
+	}, nil
+}
+
+func (u *fallbackGroupHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
+}
+
+func TestGatewayHandlerMessages_FallbackRetryUsesFallbackGroupIDInParsedRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	primaryGroupID := int64(2003)
+	fallbackGroupID := int64(2004)
+	primaryGroup := &service.Group{
+		ID:                              primaryGroupID,
+		Hydrated:                        true,
+		Platform:                        service.PlatformAnthropic,
+		Status:                          service.StatusActive,
+		SubscriptionType:                service.SubscriptionTypeStandard,
+		FallbackGroupIDOnInvalidRequest: &fallbackGroupID,
+	}
+	fallbackGroup := &service.Group{
+		ID:               fallbackGroupID,
+		Hydrated:         true,
+		Platform:         service.PlatformAnthropic,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+
+	primaryAccount := &service.Account{
+		ID:          1003,
+		Name:        "ag-prompt-too-long",
+		Platform:    service.PlatformAntigravity,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "token",
+			"project_id":   "project",
+		},
+		Extra:         map[string]any{"mixed_scheduling": true},
+		AccountGroups: []service.AccountGroup{{AccountID: 1003, GroupID: primaryGroupID}},
+	}
+	fallbackAccount := &service.Account{
+		ID:          1004,
+		Name:        "anthropic-fallback",
+		Platform:    service.PlatformAnthropic,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "fallback-key",
+			"base_url": "https://api.anthropic.com",
+		},
+		Extra:         map[string]any{"anthropic_passthrough": true},
+		AccountGroups: []service.AccountGroup{{AccountID: 1004, GroupID: fallbackGroupID}},
+	}
+
+	schedulerCache := &fakeSchedulerCache{accountsByGroup: map[int64][]*service.Account{
+		primaryGroupID:  {primaryAccount},
+		fallbackGroupID: {fallbackAccount},
+	}}
+	schedulerSnapshot := service.NewSchedulerSnapshotService(schedulerCache, nil, nil, nil, nil)
+	groupRepo := &fakeGroupRepo{groups: map[int64]*service.Group{
+		primaryGroupID:  primaryGroup,
+		fallbackGroupID: fallbackGroup,
+	}}
+	upstream := &fallbackGroupHTTPUpstream{}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	gatewayService := service.NewGatewayService(
+		nil, groupRepo, nil, nil, nil, nil, nil, nil, cfg, schedulerSnapshot,
+		nil, nil, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil,
+	)
+	billingCacheService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCacheService.Stop)
+	antigravityGatewayService := service.NewAntigravityGatewayService(
+		nil, nil, schedulerSnapshot, &service.AntigravityTokenProvider{}, nil, upstream, nil, nil,
+	)
+	h := &GatewayHandler{
+		gatewayService:            gatewayService,
+		antigravityGatewayService: antigravityGatewayService,
+		billingCacheService:       billingCacheService,
+		concurrencyHelper: NewConcurrencyHelper(
+			service.NewConcurrencyService(&fakeConcurrencyCache{}),
+			SSEPingFormatClaude,
+			0,
+		),
+		maxAccountSwitches: 1,
+		cfg:                cfg,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","max_tokens":256,"messages":[{"role":"user","content":"hello"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), ctxkey.Group, primaryGroup))
+	c.Request = req
+
+	apiKey := &service.APIKey{
+		ID:      3003,
+		UserID:  4003,
+		GroupID: &primaryGroupID,
+		Status:  service.StatusActive,
+		User:    &service.User{ID: 4003, Concurrency: 10, Balance: 100},
+		Group:   primaryGroup,
+	}
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.UserID, Concurrency: 10})
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	rawParsedRequest, ok := c.Get("parsed_request")
+	require.True(t, ok)
+	attemptParsedRequest, ok := rawParsedRequest.(*service.ParsedRequest)
+	require.True(t, ok)
+	require.NotNil(t, attemptParsedRequest.GroupID)
+	require.Equal(t, fallbackGroupID, *attemptParsedRequest.GroupID)
 }

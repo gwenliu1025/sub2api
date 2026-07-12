@@ -259,36 +259,54 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		return s.handleErrorResponse(ctx, resp, c, account, input.RequestModel)
 	}
 
-	var usage *ClaudeUsage
+	var responseResult *equivalentCacheV2ResponseResult
 	var firstTokenMs *int
 	var clientDisconnect bool
+	responsePlan := s.prepareEquivalentCacheV2ResponsePlan(
+		ctx,
+		account,
+		input.Parsed,
+		input.OriginalModel,
+		resp.Header.Get("x-request-id"),
+	)
 	if input.RequestStream {
-		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
+		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel, responsePlan)
 		if err != nil {
 			return nil, err
 		}
-		usage = streamResult.usage
+		responseResult = &equivalentCacheV2ResponseResult{
+			RawUsage:      cloneClaudeUsage(streamResult.rawUsage),
+			ResponseUsage: cloneClaudeUsage(streamResult.responseUsage),
+			Version:       streamResult.usageAllocationVersion,
+			Kind:          streamResult.usageAllocationKind,
+			Allocated:     streamResult.usageAllocationVersion == equivalentCacheV2AlgorithmVersion,
+			UsageValid:    true,
+		}
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
 	} else {
-		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
+		responseResult, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, responsePlan)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if usage == nil {
-		usage = &ClaudeUsage{}
+	if responseResult == nil {
+		responseResult = &equivalentCacheV2ResponseResult{}
 	}
 
 	return &ForwardResult{
-		RequestID:        resp.Header.Get("x-request-id"),
-		Usage:            *usage,
-		Model:            input.OriginalModel,
-		UpstreamModel:    input.RequestModel,
-		Stream:           input.RequestStream,
-		Duration:         time.Since(input.StartTime),
-		FirstTokenMs:     firstTokenMs,
-		ClientDisconnect: clientDisconnect,
+		RequestID:              resp.Header.Get("x-request-id"),
+		Usage:                  cloneClaudeUsage(responseResult.ResponseUsage),
+		RawUsage:               cloneClaudeUsage(responseResult.RawUsage),
+		ResponseUsage:          cloneClaudeUsage(responseResult.ResponseUsage),
+		UsageAllocationVersion: responseResult.Version,
+		UsageAllocationKind:    responseResult.Kind,
+		Model:                  input.OriginalModel,
+		UpstreamModel:          input.RequestModel,
+		Stream:                 input.RequestStream,
+		Duration:               time.Since(input.StartTime),
+		FirstTokenMs:           firstTokenMs,
+		ClientDisconnect:       clientDisconnect,
 	}, nil
 }
 
@@ -369,6 +387,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	account *Account,
 	startTime time.Time,
 	model string,
+	plans ...*equivalentCacheV2ResponsePlan,
 ) (*streamingResult, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
@@ -398,10 +417,32 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		return nil, errors.New("streaming not supported")
 	}
 
-	usage := &ClaudeUsage{}
+	var plan *equivalentCacheV2ResponsePlan
+	if len(plans) > 0 {
+		plan = plans[0]
+	}
+
+	rawUsage := &ClaudeUsage{}
+	responseUsage := &ClaudeUsage{}
+	allocationAttempted := false
+	allocationVersion := int16(0)
+	allocationKind := UsageAllocationKindNone
 	var firstTokenMs *int
 	clientDisconnected := false
 	sawTerminalEvent := false
+	resultWithUsage := func(disconnected bool) *streamingResult {
+		raw := cloneClaudeUsage(*rawUsage)
+		response := cloneClaudeUsage(*responseUsage)
+		return &streamingResult{
+			usage:                  &response,
+			rawUsage:               raw,
+			responseUsage:          response,
+			usageAllocationVersion: allocationVersion,
+			usageAllocationKind:    allocationKind,
+			firstTokenMs:           firstTokenMs,
+			clientDisconnect:       disconnected,
+		}
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -482,12 +523,107 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		}
 		keepaliveTimer.Reset(keepaliveInterval)
 	}
-	inPartialEvent := false
+	pendingEventLines := make([]string, 0, 4)
+
+	processEvent := func(lines []string) string {
+		if len(lines) == 0 {
+			return ""
+		}
+
+		outputLines := append([]string(nil), lines...)
+		eventName := ""
+		dataIndex := -1
+		data := ""
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "event:") {
+				eventName = strings.TrimSpace(strings.TrimPrefix(trimmed, "event:"))
+			}
+			if dataIndex < 0 {
+				if candidate, ok := extractAnthropicSSEDataLine(line); ok {
+					dataIndex = i
+					data = candidate
+				}
+			}
+		}
+
+		trimmedData := strings.TrimSpace(data)
+		if anthropicStreamEventIsTerminal(eventName, trimmedData) {
+			sawTerminalEvent = true
+		}
+		if firstTokenMs == nil && trimmedData != "" && trimmedData != "[DONE]" {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
+		}
+
+		eventType := ""
+		if dataIndex >= 0 && gjson.Valid(data) {
+			eventType = gjson.Get(data, "type").String()
+		}
+
+		if !allocationAttempted && eventType == "message_start" {
+			allocationAttempted = true
+			if plan != nil {
+				allocation := applyEquivalentCacheV2JSON(ctx, []byte(data), "message.usage", *plan)
+				if allocation.UsageValid {
+					*rawUsage = cloneClaudeUsage(allocation.RawUsage)
+					*responseUsage = cloneClaudeUsage(allocation.ResponseUsage)
+					if allocation.Allocated {
+						allocationVersion = allocation.Version
+						allocationKind = allocation.Kind
+						outputLines[dataIndex] = "data: " + string(allocation.Body)
+						c.Header(equivalentCacheV2AllocationHeaderName, allocation.HeaderValue())
+					}
+				} else {
+					s.parseSSEUsagePassthrough(data, rawUsage)
+					*responseUsage = cloneClaudeUsage(*rawUsage)
+				}
+			} else {
+				s.parseSSEUsagePassthrough(data, rawUsage)
+				*responseUsage = cloneClaudeUsage(*rawUsage)
+			}
+		} else {
+			if !allocationAttempted && eventType != "" && eventType != "ping" {
+				allocationAttempted = true
+			}
+			if dataIndex >= 0 {
+				s.parseSSEUsagePassthrough(data, rawUsage)
+			}
+			if allocationVersion == 0 {
+				*responseUsage = cloneClaudeUsage(*rawUsage)
+			} else if eventType == "message_delta" {
+				responseUsage.OutputTokens = rawUsage.OutputTokens
+			}
+		}
+
+		return strings.Join(outputLines, "\n") + "\n\n"
+	}
+
+	writePendingEvent := func() {
+		if len(pendingEventLines) == 0 {
+			return
+		}
+		block := processEvent(pendingEventLines)
+		pendingEventLines = pendingEventLines[:0]
+		if clientDisconnected || block == "" {
+			return
+		}
+		restored := reverseToolNamesIfPresent(c, []byte(block))
+		if _, err := w.Write(restored); err != nil {
+			clientDisconnected = true
+			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+			return
+		}
+		flusher.Flush()
+		lastDataAt = time.Now()
+		resetKeepaliveTimer()
+	}
 
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				writePendingEvent()
 				if !clientDisconnected {
 					// 兜底补刷，确保最后一个未以空行结尾的事件也能及时送达客户端。
 					flusher.Flush()
@@ -496,65 +632,36 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					if clientDisconnected && streamInterval > 0 {
 						lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
 						if time.Since(lastRead) >= streamInterval {
-							return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
+							return resultWithUsage(true), fmt.Errorf("stream usage incomplete after timeout")
 						}
 					}
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
+					return resultWithUsage(clientDisconnected), fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+				return resultWithUsage(clientDisconnected), nil
 			}
 			if ev.err != nil {
+				writePendingEvent()
 				if sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+					return resultWithUsage(clientDisconnected), nil
 				}
 				if clientDisconnected {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
+					return resultWithUsage(true), fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
 				}
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete: %w", ev.err)
+					return resultWithUsage(true), fmt.Errorf("stream usage incomplete: %w", ev.err)
 				}
 				if errors.Is(ev.err, bufio.ErrTooLong) {
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
+					return resultWithUsage(false), ev.err
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
+				return resultWithUsage(false), fmt.Errorf("stream read error: %w", ev.err)
 			}
 
 			line := ev.line
-			if data, ok := extractAnthropicSSEDataLine(line); ok {
-				trimmed := strings.TrimSpace(data)
-				if anthropicStreamEventIsTerminal("", trimmed) {
-					sawTerminalEvent = true
-				}
-				if firstTokenMs == nil && trimmed != "" && trimmed != "[DONE]" {
-					ms := int(time.Since(startTime).Milliseconds())
-					firstTokenMs = &ms
-				}
-				s.parseSSEUsagePassthrough(data, usage)
+			if strings.TrimSpace(line) == "" {
+				writePendingEvent()
 			} else {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
-					sawTerminalEvent = true
-				}
-			}
-
-			if !clientDisconnected {
-				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
-				if _, err := io.WriteString(w, restored); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-				} else if _, err := io.WriteString(w, "\n"); err != nil {
-					clientDisconnected = true
-					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-				} else if line == "" {
-					// 按 SSE 事件边界刷出，减少每行 flush 带来的 syscall 开销。
-					flusher.Flush()
-					lastDataAt = time.Now()
-					resetKeepaliveTimer()
-					inPartialEvent = false
-				} else {
-					inPartialEvent = true
-				}
+				pendingEventLines = append(pendingEventLines, line)
 			}
 
 		case <-intervalCh:
@@ -562,20 +669,21 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if time.Since(lastRead) < streamInterval {
 				continue
 			}
+			writePendingEvent()
 			if clientDisconnected {
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
+				return resultWithUsage(true), fmt.Errorf("stream usage incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, model, streamInterval)
 			if s.rateLimitService != nil {
 				s.rateLimitService.HandleStreamTimeout(ctx, account, model)
 			}
-			return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
+			return resultWithUsage(false), fmt.Errorf("stream data interval timeout")
 
 		case <-keepaliveCh:
 			if clientDisconnected {
 				continue
 			}
-			if inPartialEvent {
+			if len(pendingEventLines) > 0 || (plan != nil && !allocationAttempted) {
 				resetKeepaliveTimer()
 				continue
 			}
@@ -764,7 +872,8 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
-) (*ClaudeUsage, error) {
+	plan *equivalentCacheV2ResponsePlan,
+) (*equivalentCacheV2ResponseResult, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}
@@ -781,16 +890,28 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		}
 	}
 
-	usage := parseClaudeUsageFromResponseBody(body)
+	legacyUsage := parseClaudeUsageFromResponseBody(body)
+	result := equivalentCacheV2RawResponseResult(body, *legacyUsage, true)
+	if plan != nil {
+		result = applyEquivalentCacheV2JSON(ctx, body, "usage", *plan)
+		if !result.UsageValid {
+			result = equivalentCacheV2RawResponseResult(body, *legacyUsage, true)
+		}
+		body = result.Body
+	}
 
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	if headerValue := result.HeaderValue(); headerValue != "" {
+		c.Header(equivalentCacheV2AllocationHeaderName, headerValue)
+	}
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "application/json"
 	}
 	body = reverseToolNamesIfPresent(c, body)
+	result.Body = body
 	c.Data(resp.StatusCode, contentType, body)
-	return usage, nil
+	return &result, nil
 }
 
 func writeAnthropicPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {

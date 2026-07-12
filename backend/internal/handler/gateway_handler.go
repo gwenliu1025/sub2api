@@ -576,6 +576,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 				return
 			}
+			attemptParsedReq.GroupID = currentAPIKey.GroupID
 
 			// 选择支持该模型的账号
 			reqLog.Info("sticky.selecting_account",
