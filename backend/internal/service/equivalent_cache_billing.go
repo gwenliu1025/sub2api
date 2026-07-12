@@ -29,12 +29,12 @@ const (
 )
 
 type equivalentCacheV2Config struct {
-	Enabled               bool
-	Mode                  equivalentCacheV2Mode
-	PricingProfile        string
-	VisibleRateMinPPM     int64
-	VisibleRateMaxPPM     int64
-	KiroGoPoolConfirmed   bool
+	Enabled             bool
+	Mode                equivalentCacheV2Mode
+	PricingProfile      string
+	VisibleRateMinPPM   int64
+	VisibleRateMaxPPM   int64
+	KiroGoPoolConfirmed bool
 }
 
 func equivalentCacheV2ConfigFromAccount(account *Account) (equivalentCacheV2Config, bool) {
