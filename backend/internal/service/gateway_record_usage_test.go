@@ -210,6 +210,14 @@ func TestGatewayServiceRecordUsage_EquivalentCacheV2LocksRawCostAndLogsResponseU
 	require.Equal(t, allocation.ResponseUsage.CacheCreationInputTokens, usageRepo.lastLog.CacheCreationTokens)
 	require.Equal(t, allocation.ResponseUsage.CacheCreation5mTokens, usageRepo.lastLog.CacheCreation5mTokens)
 	require.Equal(t, allocation.ResponseUsage.CacheCreation1hTokens, usageRepo.lastLog.CacheCreation1hTokens)
+	require.Equal(t, raw.InputTokens, *usageRepo.lastLog.RawInputTokens)
+	require.Equal(t, raw.OutputTokens, *usageRepo.lastLog.RawOutputTokens)
+	require.Equal(t, raw.CacheReadInputTokens, *usageRepo.lastLog.RawCacheReadTokens)
+	require.Equal(t, raw.CacheCreationInputTokens, *usageRepo.lastLog.RawCacheCreationTokens)
+	require.Equal(t, raw.CacheCreation5mTokens, *usageRepo.lastLog.RawCacheCreation5mTokens)
+	require.Equal(t, raw.CacheCreation1hTokens, *usageRepo.lastLog.RawCacheCreation1hTokens)
+	require.Equal(t, equivalentCacheV2AlgorithmVersion, *usageRepo.lastLog.UsageAllocationVersion)
+	require.Equal(t, int16(allocation.Kind), *usageRepo.lastLog.UsageAllocationKind)
 
 	require.Equal(t, usageRepo.lastLog.InputTokens, billingRepo.lastCmd.InputTokens)
 	require.Equal(t, usageRepo.lastLog.OutputTokens, billingRepo.lastCmd.OutputTokens)
@@ -271,9 +279,68 @@ func TestGatewayServiceRecordUsage_EquivalentCacheV2ShadowLogsRawUsageAndRawCost
 	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
 	require.Zero(t, usageRepo.lastLog.CacheReadTokens)
 	require.Zero(t, usageRepo.lastLog.CacheCreationTokens)
+	require.Nil(t, usageRepo.lastLog.RawInputTokens)
+	require.Nil(t, usageRepo.lastLog.RawOutputTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheReadTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheCreationTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheCreation5mTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheCreation1hTokens)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationVersion)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationKind)
 	require.InDelta(t, expectedCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
 	require.InDelta(t, expectedCost.ActualCost, usageRepo.lastLog.ActualCost, 1e-12)
 	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_EquivalentCacheV2InvalidAllocationLeavesAuditFieldsNil(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	groupID := int64(903)
+	model := "claude-sonnet-4"
+	configureEquivalentCacheV2RecordUsagePricing(t, svc, groupID, model, 703)
+
+	raw := ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}
+	invalidResponse := ClaudeUsage{
+		InputTokens:          1,
+		OutputTokens:         raw.OutputTokens + 1,
+		CacheReadInputTokens: 1,
+	}
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:              "gateway_equivalent_cache_v2_invalid_allocation",
+			Usage:                  cloneClaudeUsage(invalidResponse),
+			RawUsage:               cloneClaudeUsage(raw),
+			ResponseUsage:          cloneClaudeUsage(invalidResponse),
+			UsageAllocationVersion: equivalentCacheV2AlgorithmVersion,
+			UsageAllocationKind:    UsageAllocationKindReadMajor,
+			Model:                  model,
+			Duration:               time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      503,
+			Quota:   100,
+			GroupID: &groupID,
+			Group:   &Group{ID: groupID, RateMultiplier: 1.1},
+		},
+		User:    &User{ID: 603},
+		Account: equivalentCacheV2RecordUsageAccount(703, equivalentCacheV2ModeActive),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, raw.InputTokens, usageRepo.lastLog.InputTokens)
+	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
+	require.Zero(t, usageRepo.lastLog.CacheReadTokens)
+	require.Zero(t, usageRepo.lastLog.CacheCreationTokens)
+	require.Nil(t, usageRepo.lastLog.RawInputTokens)
+	require.Nil(t, usageRepo.lastLog.RawOutputTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheReadTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheCreationTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheCreation5mTokens)
+	require.Nil(t, usageRepo.lastLog.RawCacheCreation1hTokens)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationVersion)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationKind)
 }
 
 func equivalentCacheV2RecordUsageAccount(id int64, mode equivalentCacheV2Mode) *Account {

@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,14 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			log.CacheReadTokens,
 			log.CacheCreation5mTokens,
 			log.CacheCreation1hTokens,
+			sqlmock.AnyArg(), // raw_input_tokens
+			sqlmock.AnyArg(), // raw_output_tokens
+			sqlmock.AnyArg(), // raw_cache_read_tokens
+			sqlmock.AnyArg(), // raw_cache_creation_tokens
+			sqlmock.AnyArg(), // raw_cache_creation_5m_tokens
+			sqlmock.AnyArg(), // raw_cache_creation_1h_tokens
+			sqlmock.AnyArg(), // usage_allocation_version
+			sqlmock.AnyArg(), // usage_allocation_kind
 			log.ImageOutputTokens,
 			log.ImageOutputCost,
 			log.InputCost,
@@ -142,6 +151,14 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			log.CacheReadTokens,
 			log.CacheCreation5mTokens,
 			log.CacheCreation1hTokens,
+			sqlmock.AnyArg(), // raw_input_tokens
+			sqlmock.AnyArg(), // raw_output_tokens
+			sqlmock.AnyArg(), // raw_cache_read_tokens
+			sqlmock.AnyArg(), // raw_cache_creation_tokens
+			sqlmock.AnyArg(), // raw_cache_creation_5m_tokens
+			sqlmock.AnyArg(), // raw_cache_creation_1h_tokens
+			sqlmock.AnyArg(), // usage_allocation_version
+			sqlmock.AnyArg(), // usage_allocation_kind
 			log.ImageOutputTokens,
 			log.ImageOutputCost,
 			log.InputCost,
@@ -244,6 +261,97 @@ func TestPrepareUsageLogInsert_ArgCountMatchesTypes(t *testing.T) {
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
 }
 
+func TestUsageLogEquivalentCacheV2AuditFieldsPreserveInsertOrder(t *testing.T) {
+	rawInput := 101
+	rawOutput := 102
+	rawCacheRead := 103
+	rawCacheCreation := 104
+	rawCacheCreation5m := 105
+	rawCacheCreation1h := 106
+	allocationVersion := int16(2)
+	allocationKind := int16(service.UsageAllocationKindCreateMixed)
+	log := &service.UsageLog{
+		UserID:                   1,
+		APIKeyID:                 2,
+		AccountID:                3,
+		RequestID:                "req-equivalent-cache-v2-audit",
+		Model:                    "claude-sonnet-4",
+		RequestedModel:           "claude-sonnet-4",
+		InputTokens:              11,
+		OutputTokens:             12,
+		CacheCreationTokens:      13,
+		CacheReadTokens:          14,
+		CacheCreation5mTokens:    15,
+		CacheCreation1hTokens:    16,
+		RawInputTokens:           &rawInput,
+		RawOutputTokens:          &rawOutput,
+		RawCacheReadTokens:       &rawCacheRead,
+		RawCacheCreationTokens:   &rawCacheCreation,
+		RawCacheCreation5mTokens: &rawCacheCreation5m,
+		RawCacheCreation1hTokens: &rawCacheCreation1h,
+		UsageAllocationVersion:   &allocationVersion,
+		UsageAllocationKind:      &allocationKind,
+		CreatedAt:                time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC),
+	}
+
+	prepared := prepareUsageLogInsert(log)
+	require.Equal(t, []any{
+		sql.NullInt64{Int64: int64(rawInput), Valid: true},
+		sql.NullInt64{Int64: int64(rawOutput), Valid: true},
+		sql.NullInt64{Int64: int64(rawCacheRead), Valid: true},
+		sql.NullInt64{Int64: int64(rawCacheCreation), Valid: true},
+		sql.NullInt64{Int64: int64(rawCacheCreation5m), Valid: true},
+		sql.NullInt64{Int64: int64(rawCacheCreation1h), Valid: true},
+		sql.NullInt16{Int16: allocationVersion, Valid: true},
+		sql.NullInt16{Int16: allocationKind, Valid: true},
+	}, prepared.args[15:23])
+	require.Equal(t, []string{
+		"integer",
+		"integer",
+		"integer",
+		"integer",
+		"integer",
+		"integer",
+		"smallint",
+		"smallint",
+	}, usageLogInsertArgTypes[15:23])
+
+	key := usageLogBatchKey(log.RequestID, log.APIKeyID)
+	batchQuery, batchArgs := buildUsageLogBatchInsertQuery(
+		[]string{key},
+		map[string]usageLogInsertPrepared{key: prepared},
+	)
+	bestEffortQuery, bestEffortArgs := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
+	auditColumns := `
+				raw_input_tokens,
+				raw_output_tokens,
+				raw_cache_read_tokens,
+				raw_cache_creation_tokens,
+				raw_cache_creation_5m_tokens,
+				raw_cache_creation_1h_tokens,
+				usage_allocation_version,
+				usage_allocation_kind,`
+	require.Contains(t, batchQuery, auditColumns)
+	require.Contains(t, bestEffortQuery, strings.ReplaceAll(auditColumns, "\t\t\t\t", "\t\t\t"))
+	require.Equal(t, prepared.args, batchArgs[1:])
+	require.Equal(t, prepared.args, bestEffortArgs)
+
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	mock.ExpectQuery("INSERT INTO usage_logs").
+		WithArgs(anySliceToDriverValues(prepared.args)...).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(501), log.CreatedAt))
+	inserted, err := repo.createSingle(context.Background(), db, log)
+	require.NoError(t, err)
+	require.True(t, inserted)
+
+	mock.ExpectExec("INSERT INTO usage_logs").
+		WithArgs(anySliceToDriverValues(prepared.args)...).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	require.NoError(t, execUsageLogInsertNoResult(context.Background(), db, prepared))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
 	imageSize := "4K"
 	inputSize := "1024x1024"
@@ -265,11 +373,11 @@ func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
 		CreatedAt:          time.Date(2025, 1, 6, 12, 0, 0, 0, time.UTC),
 	})
 
-	require.Equal(t, sql.NullString{String: imageSize, Valid: true}, prepared.args[34])
-	require.Equal(t, sql.NullString{String: inputSize, Valid: true}, prepared.args[35])
-	require.Equal(t, sql.NullString{String: outputSize, Valid: true}, prepared.args[36])
-	require.Equal(t, sql.NullString{String: source, Valid: true}, prepared.args[37])
-	breakdownJSON, ok := prepared.args[38].(string)
+	require.Equal(t, sql.NullString{String: imageSize, Valid: true}, prepared.args[42])
+	require.Equal(t, sql.NullString{String: inputSize, Valid: true}, prepared.args[43])
+	require.Equal(t, sql.NullString{String: outputSize, Valid: true}, prepared.args[44])
+	require.Equal(t, sql.NullString{String: source, Valid: true}, prepared.args[45])
+	breakdownJSON, ok := prepared.args[46].(string)
 	require.True(t, ok)
 	require.JSONEq(t, `{"1K":1,"4K":1}`, breakdownJSON)
 }
@@ -787,6 +895,14 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullInt64{},
 			sql.NullInt64{},
 			0, 0, 0, 0, 0, 0,
+			sql.NullInt64{Valid: true, Int64: 101},
+			sql.NullInt64{Valid: true, Int64: 102},
+			sql.NullInt64{Valid: true, Int64: 103},
+			sql.NullInt64{Valid: true, Int64: 104},
+			sql.NullInt64{Valid: true, Int64: 105},
+			sql.NullInt64{Valid: true, Int64: 106},
+			sql.NullInt16{Valid: true, Int16: 2},
+			sql.NullInt16{Valid: true, Int16: int16(service.UsageAllocationKindCreateMixed)},
 			0, 0.0, // image_output_tokens, image_output_cost
 			0.0, 0.0, 0.0, 0.0, 0.8, 0.8,
 			1.0,
@@ -831,6 +947,14 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		require.NotNil(t, log.ImageSizeSource)
 		require.Equal(t, "output", *log.ImageSizeSource)
 		require.Equal(t, map[string]int{"4K": 2}, log.ImageSizeBreakdown)
+		require.Equal(t, 101, *log.RawInputTokens)
+		require.Equal(t, 102, *log.RawOutputTokens)
+		require.Equal(t, 103, *log.RawCacheReadTokens)
+		require.Equal(t, 104, *log.RawCacheCreationTokens)
+		require.Equal(t, 105, *log.RawCacheCreation5mTokens)
+		require.Equal(t, 106, *log.RawCacheCreation1hTokens)
+		require.Equal(t, int16(2), *log.UsageAllocationVersion)
+		require.Equal(t, int16(service.UsageAllocationKindCreateMixed), *log.UsageAllocationKind)
 	})
 
 	t.Run("request_type_ws_v2_overrides_legacy", func(t *testing.T) {
@@ -852,6 +976,14 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			4,                 // cache_read_tokens
 			5,                 // cache_creation_5m_tokens
 			6,                 // cache_creation_1h_tokens
+			sql.NullInt64{},   // raw_input_tokens
+			sql.NullInt64{},   // raw_output_tokens
+			sql.NullInt64{},   // raw_cache_read_tokens
+			sql.NullInt64{},   // raw_cache_creation_tokens
+			sql.NullInt64{},   // raw_cache_creation_5m_tokens
+			sql.NullInt64{},   // raw_cache_creation_1h_tokens
+			sql.NullInt16{},   // usage_allocation_version
+			sql.NullInt16{},   // usage_allocation_kind
 			0,                 // image_output_tokens
 			0.0,               // image_output_cost
 			0.1,               // input_cost
@@ -913,6 +1045,14 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullInt64{},
 			sql.NullInt64{},
 			1, 2, 3, 4, 5, 6,
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt16{},
+			sql.NullInt16{},
 			0, 0.0, // image_output_tokens, image_output_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
 			1.0,
@@ -968,6 +1108,14 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullInt64{},
 			sql.NullInt64{},
 			1, 2, 3, 4, 5, 6,
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt16{},
+			sql.NullInt16{},
 			0, 0.0, // image_output_tokens, image_output_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
 			1.0,

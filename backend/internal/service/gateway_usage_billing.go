@@ -1034,6 +1034,25 @@ func (s *GatewayService) buildRecordUsageLog(
 		usageLog.TotalCost = cost.TotalCost
 		usageLog.ActualCost = cost.ActualCost
 	}
+	if result.UsageAllocationVersion == equivalentCacheV2AlgorithmVersion &&
+		result.UsageAllocationKind != UsageAllocationKindNone {
+		rawInputTokens := result.RawUsage.InputTokens
+		rawOutputTokens := result.RawUsage.OutputTokens
+		rawCacheReadTokens := result.RawUsage.CacheReadInputTokens
+		rawCacheCreationTokens := result.RawUsage.CacheCreationInputTokens
+		rawCacheCreation5mTokens := result.RawUsage.CacheCreation5mTokens
+		rawCacheCreation1hTokens := result.RawUsage.CacheCreation1hTokens
+		allocationVersion := result.UsageAllocationVersion
+		allocationKind := int16(result.UsageAllocationKind)
+		usageLog.RawInputTokens = &rawInputTokens
+		usageLog.RawOutputTokens = &rawOutputTokens
+		usageLog.RawCacheReadTokens = &rawCacheReadTokens
+		usageLog.RawCacheCreationTokens = &rawCacheCreationTokens
+		usageLog.RawCacheCreation5mTokens = &rawCacheCreation5mTokens
+		usageLog.RawCacheCreation1hTokens = &rawCacheCreation1hTokens
+		usageLog.UsageAllocationVersion = &allocationVersion
+		usageLog.UsageAllocationKind = &allocationKind
+	}
 
 	return usageLog
 }

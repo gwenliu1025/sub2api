@@ -39,6 +39,14 @@ var usageLogInsertArgTypes = [...]string{
 	"integer",     // cache_read_tokens
 	"integer",     // cache_creation_5m_tokens
 	"integer",     // cache_creation_1h_tokens
+	"integer",     // raw_input_tokens
+	"integer",     // raw_output_tokens
+	"integer",     // raw_cache_read_tokens
+	"integer",     // raw_cache_creation_tokens
+	"integer",     // raw_cache_creation_5m_tokens
+	"integer",     // raw_cache_creation_1h_tokens
+	"smallint",    // usage_allocation_version
+	"smallint",    // usage_allocation_kind
 	"integer",     // image_output_tokens
 	"numeric",     // image_output_cost
 	"numeric",     // input_cost
@@ -231,6 +239,14 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			cache_read_tokens,
 			cache_creation_5m_tokens,
 			cache_creation_1h_tokens,
+			raw_input_tokens,
+			raw_output_tokens,
+			raw_cache_read_tokens,
+			raw_cache_creation_tokens,
+			raw_cache_creation_5m_tokens,
+			raw_cache_creation_1h_tokens,
+			usage_allocation_version,
+			usage_allocation_kind,
 			image_output_tokens,
 			image_output_cost,
 			input_cost,
@@ -273,9 +289,12 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9,
 			$10, $11, $12, $13,
-			$14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53
+			$14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+			$24, $25, $26, $27, $28, $29, $30, $31,
+			$32, $33, $34, $35, $36, $37, $38, $39,
+			$40, $41, $42, $43, $44, $45, $46, $47,
+			$48, $49, $50, $51, $52, $53, $54, $55,
+			$56, $57, $58, $59, $60, $61
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -682,6 +701,14 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			cache_read_tokens,
 			cache_creation_5m_tokens,
 			cache_creation_1h_tokens,
+			raw_input_tokens,
+			raw_output_tokens,
+			raw_cache_read_tokens,
+			raw_cache_creation_tokens,
+			raw_cache_creation_5m_tokens,
+			raw_cache_creation_1h_tokens,
+			usage_allocation_version,
+			usage_allocation_kind,
 			image_output_tokens,
 			image_output_cost,
 			input_cost,
@@ -722,7 +749,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(keys)*53)
+	args := make([]any, 0, len(keys)*(len(usageLogInsertArgTypes)+1))
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -766,6 +793,14 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				cache_read_tokens,
 				cache_creation_5m_tokens,
 				cache_creation_1h_tokens,
+				raw_input_tokens,
+				raw_output_tokens,
+				raw_cache_read_tokens,
+				raw_cache_creation_tokens,
+				raw_cache_creation_5m_tokens,
+				raw_cache_creation_1h_tokens,
+				usage_allocation_version,
+				usage_allocation_kind,
 				image_output_tokens,
 				image_output_cost,
 				input_cost,
@@ -821,6 +856,14 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				cache_read_tokens,
 				cache_creation_5m_tokens,
 				cache_creation_1h_tokens,
+				raw_input_tokens,
+				raw_output_tokens,
+				raw_cache_read_tokens,
+				raw_cache_creation_tokens,
+				raw_cache_creation_5m_tokens,
+				raw_cache_creation_1h_tokens,
+				usage_allocation_version,
+				usage_allocation_kind,
 				image_output_tokens,
 				image_output_cost,
 				input_cost,
@@ -916,6 +959,14 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_read_tokens,
 			cache_creation_5m_tokens,
 			cache_creation_1h_tokens,
+			raw_input_tokens,
+			raw_output_tokens,
+			raw_cache_read_tokens,
+			raw_cache_creation_tokens,
+			raw_cache_creation_5m_tokens,
+			raw_cache_creation_1h_tokens,
+			usage_allocation_version,
+			usage_allocation_kind,
 			image_output_tokens,
 			image_output_cost,
 			input_cost,
@@ -956,7 +1007,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			created_at
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*53)
+	args := make([]any, 0, len(preparedList)*len(usageLogInsertArgTypes))
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {
@@ -997,6 +1048,14 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_read_tokens,
 			cache_creation_5m_tokens,
 			cache_creation_1h_tokens,
+			raw_input_tokens,
+			raw_output_tokens,
+			raw_cache_read_tokens,
+			raw_cache_creation_tokens,
+			raw_cache_creation_5m_tokens,
+			raw_cache_creation_1h_tokens,
+			usage_allocation_version,
+			usage_allocation_kind,
 			image_output_tokens,
 			image_output_cost,
 			input_cost,
@@ -1052,6 +1111,14 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_read_tokens,
 			cache_creation_5m_tokens,
 			cache_creation_1h_tokens,
+			raw_input_tokens,
+			raw_output_tokens,
+			raw_cache_read_tokens,
+			raw_cache_creation_tokens,
+			raw_cache_creation_5m_tokens,
+			raw_cache_creation_1h_tokens,
+			usage_allocation_version,
+			usage_allocation_kind,
 			image_output_tokens,
 			image_output_cost,
 			input_cost,
@@ -1115,6 +1182,14 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			cache_read_tokens,
 			cache_creation_5m_tokens,
 			cache_creation_1h_tokens,
+			raw_input_tokens,
+			raw_output_tokens,
+			raw_cache_read_tokens,
+			raw_cache_creation_tokens,
+			raw_cache_creation_5m_tokens,
+			raw_cache_creation_1h_tokens,
+			usage_allocation_version,
+			usage_allocation_kind,
 			image_output_tokens,
 			image_output_cost,
 			input_cost,
@@ -1157,9 +1232,12 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9,
 			$10, $11, $12, $13,
-			$14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53
+			$14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+			$24, $25, $26, $27, $28, $29, $30, $31,
+			$32, $33, $34, $35, $36, $37, $38, $39,
+			$40, $41, $42, $43, $44, $45, $46, $47,
+			$48, $49, $50, $51, $52, $53, $54, $55,
+			$56, $57, $58, $59, $60, $61
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1181,6 +1259,14 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 
 	groupID := nullInt64(log.GroupID)
 	subscriptionID := nullInt64(log.SubscriptionID)
+	rawInputTokens := nullInt(log.RawInputTokens)
+	rawOutputTokens := nullInt(log.RawOutputTokens)
+	rawCacheReadTokens := nullInt(log.RawCacheReadTokens)
+	rawCacheCreationTokens := nullInt(log.RawCacheCreationTokens)
+	rawCacheCreation5mTokens := nullInt(log.RawCacheCreation5mTokens)
+	rawCacheCreation1hTokens := nullInt(log.RawCacheCreation1hTokens)
+	usageAllocationVersion := nullInt16(log.UsageAllocationVersion)
+	usageAllocationKind := nullInt16(log.UsageAllocationKind)
 	duration := nullInt(log.DurationMs)
 	firstToken := nullInt(log.FirstTokenMs)
 	userAgent := nullString(log.UserAgent)
@@ -1232,6 +1318,14 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			log.CacheReadTokens,
 			log.CacheCreation5mTokens,
 			log.CacheCreation1hTokens,
+			rawInputTokens,
+			rawOutputTokens,
+			rawCacheReadTokens,
+			rawCacheCreationTokens,
+			rawCacheCreation5mTokens,
+			rawCacheCreation1hTokens,
+			usageAllocationVersion,
+			usageAllocationKind,
 			log.ImageOutputTokens,
 			log.ImageOutputCost,
 			log.InputCost,

@@ -395,6 +395,222 @@ func (_u *UsageLogUpdate) AddCacheCreation1hTokens(v int) *UsageLogUpdate {
 	return _u
 }
 
+// SetRawInputTokens sets the "raw_input_tokens" field.
+func (_u *UsageLogUpdate) SetRawInputTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetRawInputTokens()
+	_u.mutation.SetRawInputTokens(v)
+	return _u
+}
+
+// SetNillableRawInputTokens sets the "raw_input_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRawInputTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRawInputTokens(*v)
+	}
+	return _u
+}
+
+// AddRawInputTokens adds value to the "raw_input_tokens" field.
+func (_u *UsageLogUpdate) AddRawInputTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddRawInputTokens(v)
+	return _u
+}
+
+// ClearRawInputTokens clears the value of the "raw_input_tokens" field.
+func (_u *UsageLogUpdate) ClearRawInputTokens() *UsageLogUpdate {
+	_u.mutation.ClearRawInputTokens()
+	return _u
+}
+
+// SetRawOutputTokens sets the "raw_output_tokens" field.
+func (_u *UsageLogUpdate) SetRawOutputTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetRawOutputTokens()
+	_u.mutation.SetRawOutputTokens(v)
+	return _u
+}
+
+// SetNillableRawOutputTokens sets the "raw_output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRawOutputTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRawOutputTokens(*v)
+	}
+	return _u
+}
+
+// AddRawOutputTokens adds value to the "raw_output_tokens" field.
+func (_u *UsageLogUpdate) AddRawOutputTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddRawOutputTokens(v)
+	return _u
+}
+
+// ClearRawOutputTokens clears the value of the "raw_output_tokens" field.
+func (_u *UsageLogUpdate) ClearRawOutputTokens() *UsageLogUpdate {
+	_u.mutation.ClearRawOutputTokens()
+	return _u
+}
+
+// SetRawCacheReadTokens sets the "raw_cache_read_tokens" field.
+func (_u *UsageLogUpdate) SetRawCacheReadTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetRawCacheReadTokens()
+	_u.mutation.SetRawCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheReadTokens sets the "raw_cache_read_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRawCacheReadTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRawCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheReadTokens adds value to the "raw_cache_read_tokens" field.
+func (_u *UsageLogUpdate) AddRawCacheReadTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddRawCacheReadTokens(v)
+	return _u
+}
+
+// ClearRawCacheReadTokens clears the value of the "raw_cache_read_tokens" field.
+func (_u *UsageLogUpdate) ClearRawCacheReadTokens() *UsageLogUpdate {
+	_u.mutation.ClearRawCacheReadTokens()
+	return _u
+}
+
+// SetRawCacheCreationTokens sets the "raw_cache_creation_tokens" field.
+func (_u *UsageLogUpdate) SetRawCacheCreationTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetRawCacheCreationTokens()
+	_u.mutation.SetRawCacheCreationTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheCreationTokens sets the "raw_cache_creation_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRawCacheCreationTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRawCacheCreationTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheCreationTokens adds value to the "raw_cache_creation_tokens" field.
+func (_u *UsageLogUpdate) AddRawCacheCreationTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddRawCacheCreationTokens(v)
+	return _u
+}
+
+// ClearRawCacheCreationTokens clears the value of the "raw_cache_creation_tokens" field.
+func (_u *UsageLogUpdate) ClearRawCacheCreationTokens() *UsageLogUpdate {
+	_u.mutation.ClearRawCacheCreationTokens()
+	return _u
+}
+
+// SetRawCacheCreation5mTokens sets the "raw_cache_creation_5m_tokens" field.
+func (_u *UsageLogUpdate) SetRawCacheCreation5mTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetRawCacheCreation5mTokens()
+	_u.mutation.SetRawCacheCreation5mTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheCreation5mTokens sets the "raw_cache_creation_5m_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRawCacheCreation5mTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRawCacheCreation5mTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheCreation5mTokens adds value to the "raw_cache_creation_5m_tokens" field.
+func (_u *UsageLogUpdate) AddRawCacheCreation5mTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddRawCacheCreation5mTokens(v)
+	return _u
+}
+
+// ClearRawCacheCreation5mTokens clears the value of the "raw_cache_creation_5m_tokens" field.
+func (_u *UsageLogUpdate) ClearRawCacheCreation5mTokens() *UsageLogUpdate {
+	_u.mutation.ClearRawCacheCreation5mTokens()
+	return _u
+}
+
+// SetRawCacheCreation1hTokens sets the "raw_cache_creation_1h_tokens" field.
+func (_u *UsageLogUpdate) SetRawCacheCreation1hTokens(v int) *UsageLogUpdate {
+	_u.mutation.ResetRawCacheCreation1hTokens()
+	_u.mutation.SetRawCacheCreation1hTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheCreation1hTokens sets the "raw_cache_creation_1h_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRawCacheCreation1hTokens(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRawCacheCreation1hTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheCreation1hTokens adds value to the "raw_cache_creation_1h_tokens" field.
+func (_u *UsageLogUpdate) AddRawCacheCreation1hTokens(v int) *UsageLogUpdate {
+	_u.mutation.AddRawCacheCreation1hTokens(v)
+	return _u
+}
+
+// ClearRawCacheCreation1hTokens clears the value of the "raw_cache_creation_1h_tokens" field.
+func (_u *UsageLogUpdate) ClearRawCacheCreation1hTokens() *UsageLogUpdate {
+	_u.mutation.ClearRawCacheCreation1hTokens()
+	return _u
+}
+
+// SetUsageAllocationVersion sets the "usage_allocation_version" field.
+func (_u *UsageLogUpdate) SetUsageAllocationVersion(v int16) *UsageLogUpdate {
+	_u.mutation.ResetUsageAllocationVersion()
+	_u.mutation.SetUsageAllocationVersion(v)
+	return _u
+}
+
+// SetNillableUsageAllocationVersion sets the "usage_allocation_version" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUsageAllocationVersion(v *int16) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUsageAllocationVersion(*v)
+	}
+	return _u
+}
+
+// AddUsageAllocationVersion adds value to the "usage_allocation_version" field.
+func (_u *UsageLogUpdate) AddUsageAllocationVersion(v int16) *UsageLogUpdate {
+	_u.mutation.AddUsageAllocationVersion(v)
+	return _u
+}
+
+// ClearUsageAllocationVersion clears the value of the "usage_allocation_version" field.
+func (_u *UsageLogUpdate) ClearUsageAllocationVersion() *UsageLogUpdate {
+	_u.mutation.ClearUsageAllocationVersion()
+	return _u
+}
+
+// SetUsageAllocationKind sets the "usage_allocation_kind" field.
+func (_u *UsageLogUpdate) SetUsageAllocationKind(v int16) *UsageLogUpdate {
+	_u.mutation.ResetUsageAllocationKind()
+	_u.mutation.SetUsageAllocationKind(v)
+	return _u
+}
+
+// SetNillableUsageAllocationKind sets the "usage_allocation_kind" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUsageAllocationKind(v *int16) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUsageAllocationKind(*v)
+	}
+	return _u
+}
+
+// AddUsageAllocationKind adds value to the "usage_allocation_kind" field.
+func (_u *UsageLogUpdate) AddUsageAllocationKind(v int16) *UsageLogUpdate {
+	_u.mutation.AddUsageAllocationKind(v)
+	return _u
+}
+
+// ClearUsageAllocationKind clears the value of the "usage_allocation_kind" field.
+func (_u *UsageLogUpdate) ClearUsageAllocationKind() *UsageLogUpdate {
+	_u.mutation.ClearUsageAllocationKind()
+	return _u
+}
+
 // SetInputCost sets the "input_cost" field.
 func (_u *UsageLogUpdate) SetInputCost(v float64) *UsageLogUpdate {
 	_u.mutation.ResetInputCost()
@@ -1157,6 +1373,78 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedCacheCreation1hTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreation1hTokens, field.TypeInt, value)
 	}
+	if value, ok := _u.mutation.RawInputTokens(); ok {
+		_spec.SetField(usagelog.FieldRawInputTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawInputTokens(); ok {
+		_spec.AddField(usagelog.FieldRawInputTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawInputTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawInputTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldRawOutputTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldRawOutputTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawOutputTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawOutputTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheReadTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheReadTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheReadTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheReadTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheReadTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheCreationTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheCreationTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheCreationTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheCreationTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheCreationTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheCreationTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheCreation5mTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheCreation5mTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheCreation5mTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheCreation5mTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheCreation5mTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheCreation5mTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheCreation1hTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheCreation1hTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheCreation1hTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheCreation1hTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UsageAllocationVersion(); ok {
+		_spec.SetField(usagelog.FieldUsageAllocationVersion, field.TypeInt16, value)
+	}
+	if value, ok := _u.mutation.AddedUsageAllocationVersion(); ok {
+		_spec.AddField(usagelog.FieldUsageAllocationVersion, field.TypeInt16, value)
+	}
+	if _u.mutation.UsageAllocationVersionCleared() {
+		_spec.ClearField(usagelog.FieldUsageAllocationVersion, field.TypeInt16)
+	}
+	if value, ok := _u.mutation.UsageAllocationKind(); ok {
+		_spec.SetField(usagelog.FieldUsageAllocationKind, field.TypeInt16, value)
+	}
+	if value, ok := _u.mutation.AddedUsageAllocationKind(); ok {
+		_spec.AddField(usagelog.FieldUsageAllocationKind, field.TypeInt16, value)
+	}
+	if _u.mutation.UsageAllocationKindCleared() {
+		_spec.ClearField(usagelog.FieldUsageAllocationKind, field.TypeInt16)
+	}
 	if value, ok := _u.mutation.InputCost(); ok {
 		_spec.SetField(usagelog.FieldInputCost, field.TypeFloat64, value)
 	}
@@ -1832,6 +2120,222 @@ func (_u *UsageLogUpdateOne) SetNillableCacheCreation1hTokens(v *int) *UsageLogU
 // AddCacheCreation1hTokens adds value to the "cache_creation_1h_tokens" field.
 func (_u *UsageLogUpdateOne) AddCacheCreation1hTokens(v int) *UsageLogUpdateOne {
 	_u.mutation.AddCacheCreation1hTokens(v)
+	return _u
+}
+
+// SetRawInputTokens sets the "raw_input_tokens" field.
+func (_u *UsageLogUpdateOne) SetRawInputTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRawInputTokens()
+	_u.mutation.SetRawInputTokens(v)
+	return _u
+}
+
+// SetNillableRawInputTokens sets the "raw_input_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRawInputTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRawInputTokens(*v)
+	}
+	return _u
+}
+
+// AddRawInputTokens adds value to the "raw_input_tokens" field.
+func (_u *UsageLogUpdateOne) AddRawInputTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRawInputTokens(v)
+	return _u
+}
+
+// ClearRawInputTokens clears the value of the "raw_input_tokens" field.
+func (_u *UsageLogUpdateOne) ClearRawInputTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearRawInputTokens()
+	return _u
+}
+
+// SetRawOutputTokens sets the "raw_output_tokens" field.
+func (_u *UsageLogUpdateOne) SetRawOutputTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRawOutputTokens()
+	_u.mutation.SetRawOutputTokens(v)
+	return _u
+}
+
+// SetNillableRawOutputTokens sets the "raw_output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRawOutputTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRawOutputTokens(*v)
+	}
+	return _u
+}
+
+// AddRawOutputTokens adds value to the "raw_output_tokens" field.
+func (_u *UsageLogUpdateOne) AddRawOutputTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRawOutputTokens(v)
+	return _u
+}
+
+// ClearRawOutputTokens clears the value of the "raw_output_tokens" field.
+func (_u *UsageLogUpdateOne) ClearRawOutputTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearRawOutputTokens()
+	return _u
+}
+
+// SetRawCacheReadTokens sets the "raw_cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) SetRawCacheReadTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRawCacheReadTokens()
+	_u.mutation.SetRawCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheReadTokens sets the "raw_cache_read_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRawCacheReadTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRawCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheReadTokens adds value to the "raw_cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) AddRawCacheReadTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRawCacheReadTokens(v)
+	return _u
+}
+
+// ClearRawCacheReadTokens clears the value of the "raw_cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) ClearRawCacheReadTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearRawCacheReadTokens()
+	return _u
+}
+
+// SetRawCacheCreationTokens sets the "raw_cache_creation_tokens" field.
+func (_u *UsageLogUpdateOne) SetRawCacheCreationTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRawCacheCreationTokens()
+	_u.mutation.SetRawCacheCreationTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheCreationTokens sets the "raw_cache_creation_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRawCacheCreationTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRawCacheCreationTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheCreationTokens adds value to the "raw_cache_creation_tokens" field.
+func (_u *UsageLogUpdateOne) AddRawCacheCreationTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRawCacheCreationTokens(v)
+	return _u
+}
+
+// ClearRawCacheCreationTokens clears the value of the "raw_cache_creation_tokens" field.
+func (_u *UsageLogUpdateOne) ClearRawCacheCreationTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearRawCacheCreationTokens()
+	return _u
+}
+
+// SetRawCacheCreation5mTokens sets the "raw_cache_creation_5m_tokens" field.
+func (_u *UsageLogUpdateOne) SetRawCacheCreation5mTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRawCacheCreation5mTokens()
+	_u.mutation.SetRawCacheCreation5mTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheCreation5mTokens sets the "raw_cache_creation_5m_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRawCacheCreation5mTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRawCacheCreation5mTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheCreation5mTokens adds value to the "raw_cache_creation_5m_tokens" field.
+func (_u *UsageLogUpdateOne) AddRawCacheCreation5mTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRawCacheCreation5mTokens(v)
+	return _u
+}
+
+// ClearRawCacheCreation5mTokens clears the value of the "raw_cache_creation_5m_tokens" field.
+func (_u *UsageLogUpdateOne) ClearRawCacheCreation5mTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearRawCacheCreation5mTokens()
+	return _u
+}
+
+// SetRawCacheCreation1hTokens sets the "raw_cache_creation_1h_tokens" field.
+func (_u *UsageLogUpdateOne) SetRawCacheCreation1hTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRawCacheCreation1hTokens()
+	_u.mutation.SetRawCacheCreation1hTokens(v)
+	return _u
+}
+
+// SetNillableRawCacheCreation1hTokens sets the "raw_cache_creation_1h_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRawCacheCreation1hTokens(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRawCacheCreation1hTokens(*v)
+	}
+	return _u
+}
+
+// AddRawCacheCreation1hTokens adds value to the "raw_cache_creation_1h_tokens" field.
+func (_u *UsageLogUpdateOne) AddRawCacheCreation1hTokens(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRawCacheCreation1hTokens(v)
+	return _u
+}
+
+// ClearRawCacheCreation1hTokens clears the value of the "raw_cache_creation_1h_tokens" field.
+func (_u *UsageLogUpdateOne) ClearRawCacheCreation1hTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearRawCacheCreation1hTokens()
+	return _u
+}
+
+// SetUsageAllocationVersion sets the "usage_allocation_version" field.
+func (_u *UsageLogUpdateOne) SetUsageAllocationVersion(v int16) *UsageLogUpdateOne {
+	_u.mutation.ResetUsageAllocationVersion()
+	_u.mutation.SetUsageAllocationVersion(v)
+	return _u
+}
+
+// SetNillableUsageAllocationVersion sets the "usage_allocation_version" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUsageAllocationVersion(v *int16) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUsageAllocationVersion(*v)
+	}
+	return _u
+}
+
+// AddUsageAllocationVersion adds value to the "usage_allocation_version" field.
+func (_u *UsageLogUpdateOne) AddUsageAllocationVersion(v int16) *UsageLogUpdateOne {
+	_u.mutation.AddUsageAllocationVersion(v)
+	return _u
+}
+
+// ClearUsageAllocationVersion clears the value of the "usage_allocation_version" field.
+func (_u *UsageLogUpdateOne) ClearUsageAllocationVersion() *UsageLogUpdateOne {
+	_u.mutation.ClearUsageAllocationVersion()
+	return _u
+}
+
+// SetUsageAllocationKind sets the "usage_allocation_kind" field.
+func (_u *UsageLogUpdateOne) SetUsageAllocationKind(v int16) *UsageLogUpdateOne {
+	_u.mutation.ResetUsageAllocationKind()
+	_u.mutation.SetUsageAllocationKind(v)
+	return _u
+}
+
+// SetNillableUsageAllocationKind sets the "usage_allocation_kind" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUsageAllocationKind(v *int16) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUsageAllocationKind(*v)
+	}
+	return _u
+}
+
+// AddUsageAllocationKind adds value to the "usage_allocation_kind" field.
+func (_u *UsageLogUpdateOne) AddUsageAllocationKind(v int16) *UsageLogUpdateOne {
+	_u.mutation.AddUsageAllocationKind(v)
+	return _u
+}
+
+// ClearUsageAllocationKind clears the value of the "usage_allocation_kind" field.
+func (_u *UsageLogUpdateOne) ClearUsageAllocationKind() *UsageLogUpdateOne {
+	_u.mutation.ClearUsageAllocationKind()
 	return _u
 }
 
@@ -2626,6 +3130,78 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedCacheCreation1hTokens(); ok {
 		_spec.AddField(usagelog.FieldCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.RawInputTokens(); ok {
+		_spec.SetField(usagelog.FieldRawInputTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawInputTokens(); ok {
+		_spec.AddField(usagelog.FieldRawInputTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawInputTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawInputTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldRawOutputTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldRawOutputTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawOutputTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawOutputTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheReadTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheReadTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheReadTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheReadTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheReadTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheCreationTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheCreationTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheCreationTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheCreationTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheCreationTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheCreationTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheCreation5mTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheCreation5mTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheCreation5mTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheCreation5mTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheCreation5mTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheCreation5mTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RawCacheCreation1hTokens(); ok {
+		_spec.SetField(usagelog.FieldRawCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRawCacheCreation1hTokens(); ok {
+		_spec.AddField(usagelog.FieldRawCacheCreation1hTokens, field.TypeInt, value)
+	}
+	if _u.mutation.RawCacheCreation1hTokensCleared() {
+		_spec.ClearField(usagelog.FieldRawCacheCreation1hTokens, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UsageAllocationVersion(); ok {
+		_spec.SetField(usagelog.FieldUsageAllocationVersion, field.TypeInt16, value)
+	}
+	if value, ok := _u.mutation.AddedUsageAllocationVersion(); ok {
+		_spec.AddField(usagelog.FieldUsageAllocationVersion, field.TypeInt16, value)
+	}
+	if _u.mutation.UsageAllocationVersionCleared() {
+		_spec.ClearField(usagelog.FieldUsageAllocationVersion, field.TypeInt16)
+	}
+	if value, ok := _u.mutation.UsageAllocationKind(); ok {
+		_spec.SetField(usagelog.FieldUsageAllocationKind, field.TypeInt16, value)
+	}
+	if value, ok := _u.mutation.AddedUsageAllocationKind(); ok {
+		_spec.AddField(usagelog.FieldUsageAllocationKind, field.TypeInt16, value)
+	}
+	if _u.mutation.UsageAllocationKindCleared() {
+		_spec.ClearField(usagelog.FieldUsageAllocationKind, field.TypeInt16)
 	}
 	if value, ok := _u.mutation.InputCost(); ok {
 		_spec.SetField(usagelog.FieldInputCost, field.TypeFloat64, value)

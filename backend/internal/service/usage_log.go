@@ -139,6 +139,15 @@ type UsageLog struct {
 	CacheCreation5mTokens int `gorm:"column:cache_creation_5m_tokens"`
 	CacheCreation1hTokens int `gorm:"column:cache_creation_1h_tokens"`
 
+	RawInputTokens           *int
+	RawOutputTokens          *int
+	RawCacheReadTokens       *int
+	RawCacheCreationTokens   *int
+	RawCacheCreation5mTokens *int
+	RawCacheCreation1hTokens *int
+	UsageAllocationVersion   *int16
+	UsageAllocationKind      *int16
+
 	ImageOutputTokens int
 	ImageOutputCost   float64
 

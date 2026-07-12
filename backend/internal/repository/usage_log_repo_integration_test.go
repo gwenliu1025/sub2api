@@ -500,6 +500,70 @@ func (s *UsageLogRepoSuite) TestGetByID() {
 	s.Require().Equal(10, got.InputTokens)
 }
 
+func (s *UsageLogRepoSuite) TestEquivalentCacheV2AuditFieldsRoundTrip() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "getbyid-v2-audit@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-getbyid-v2-audit", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-getbyid-v2-audit"})
+	rawInput := 101
+	rawOutput := 102
+	rawCacheRead := 103
+	rawCacheCreation := 104
+	rawCacheCreation5m := 105
+	rawCacheCreation1h := 106
+	allocationVersion := int16(2)
+	allocationKind := int16(service.UsageAllocationKindCreateMixed)
+
+	log := &service.UsageLog{
+		UserID:                   user.ID,
+		APIKeyID:                 apiKey.ID,
+		AccountID:                account.ID,
+		RequestID:                uuid.NewString(),
+		Model:                    "claude-sonnet-4",
+		InputTokens:              11,
+		OutputTokens:             12,
+		CacheCreationTokens:      13,
+		CacheReadTokens:          14,
+		CacheCreation5mTokens:    15,
+		CacheCreation1hTokens:    16,
+		RawInputTokens:           &rawInput,
+		RawOutputTokens:          &rawOutput,
+		RawCacheReadTokens:       &rawCacheRead,
+		RawCacheCreationTokens:   &rawCacheCreation,
+		RawCacheCreation5mTokens: &rawCacheCreation5m,
+		RawCacheCreation1hTokens: &rawCacheCreation1h,
+		UsageAllocationVersion:   &allocationVersion,
+		UsageAllocationKind:      &allocationKind,
+		TotalCost:                1,
+		ActualCost:               1,
+		CreatedAt:                time.Now().UTC(),
+	}
+	_, err := s.repo.Create(s.ctx, log)
+	s.Require().NoError(err)
+
+	got, err := s.repo.GetByID(s.ctx, log.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(log.RawInputTokens, got.RawInputTokens)
+	s.Require().Equal(log.RawOutputTokens, got.RawOutputTokens)
+	s.Require().Equal(log.RawCacheReadTokens, got.RawCacheReadTokens)
+	s.Require().Equal(log.RawCacheCreationTokens, got.RawCacheCreationTokens)
+	s.Require().Equal(log.RawCacheCreation5mTokens, got.RawCacheCreation5mTokens)
+	s.Require().Equal(log.RawCacheCreation1hTokens, got.RawCacheCreation1hTokens)
+	s.Require().Equal(log.UsageAllocationVersion, got.UsageAllocationVersion)
+	s.Require().Equal(log.UsageAllocationKind, got.UsageAllocationKind)
+
+	rawLog := s.createUsageLog(user, apiKey, account, 20, 30, 1, time.Now().UTC())
+	rawGot, err := s.repo.GetByID(s.ctx, rawLog.ID)
+	s.Require().NoError(err)
+	s.Require().Nil(rawGot.RawInputTokens)
+	s.Require().Nil(rawGot.RawOutputTokens)
+	s.Require().Nil(rawGot.RawCacheReadTokens)
+	s.Require().Nil(rawGot.RawCacheCreationTokens)
+	s.Require().Nil(rawGot.RawCacheCreation5mTokens)
+	s.Require().Nil(rawGot.RawCacheCreation1hTokens)
+	s.Require().Nil(rawGot.UsageAllocationVersion)
+	s.Require().Nil(rawGot.UsageAllocationKind)
+}
+
 func (s *UsageLogRepoSuite) TestGetByID_NotFound() {
 	_, err := s.repo.GetByID(s.ctx, 999999)
 	s.Require().Error(err, "expected error for non-existent ID")

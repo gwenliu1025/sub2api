@@ -545,6 +545,16 @@ type AdminUsageLog struct {
 	// AccountStatsCost 自定义定价规则计算的账号统计费用（nil 表示使用默认公式）
 	AccountStatsCost *float64 `json:"account_stats_cost,omitempty"`
 
+	RawInputTokens           *int `json:"raw_input_tokens"`
+	RawOutputTokens          *int `json:"raw_output_tokens"`
+	RawCacheReadTokens       *int `json:"raw_cache_read_tokens"`
+	RawCacheCreationTokens   *int `json:"raw_cache_creation_tokens"`
+	RawCacheCreation5mTokens *int `json:"raw_cache_creation_5m_tokens"`
+	RawCacheCreation1hTokens *int `json:"raw_cache_creation_1h_tokens"`
+
+	UsageAllocationVersion *int16 `json:"usage_allocation_version"`
+	UsageAllocationKind    *int16 `json:"usage_allocation_kind"`
+
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`
 
