@@ -677,8 +677,6 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		billingModel = input.OriginalModel
 	}
 
-	s.applyEquivalentCacheBilling(ctx, result, apiKey, account, billingModel)
-
 	// 确定 RequestedModel（渠道映射前的原始模型）
 	requestedModel := result.Model
 	if input.OriginalModel != "" {

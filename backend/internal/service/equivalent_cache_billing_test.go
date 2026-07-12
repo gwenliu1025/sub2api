@@ -3,78 +3,121 @@
 package service
 
 import (
-	"math"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestEquivalentCacheBilling_DefaultSplitShowsHighCacheAndConservesPromptCost(t *testing.T) {
-	usage := ClaudeUsage{
-		InputTokens:  2000,
-		OutputTokens: 8000,
-	}
-	pricing := &ModelPricing{
-		InputPricePerToken:         5e-6,
-		OutputPricePerToken:        25e-6,
-		CacheCreationPricePerToken: 6.25e-6,
-		CacheReadPricePerToken:     0.6e-6,
-	}
-
-	ok := applyEquivalentCacheBillingToUsage(&usage, pricing, defaultEquivalentCacheBillingConfig())
-	if !ok {
-		t.Fatal("expected equivalent cache billing to apply")
-	}
-
-	promptTokens := usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
-	cacheRate := float64(usage.CacheReadInputTokens) / float64(promptTokens)
-	if cacheRate < 0.95 {
-		t.Fatalf("cache rate = %.4f, want >= 0.95; usage=%+v", cacheRate, usage)
-	}
-
-	wantPromptCost := math.Ceil(2000*1.08) * 5e-6
-	gotPromptCost := float64(usage.InputTokens)*pricing.InputPricePerToken +
-		float64(usage.CacheReadInputTokens)*pricing.CacheReadPricePerToken +
-		float64(usage.CacheCreationInputTokens)*pricing.CacheCreationPricePerToken
-	if math.Abs(gotPromptCost-wantPromptCost) > 0.00001 {
-		t.Fatalf("prompt cost = %.10f, want %.10f; usage=%+v", gotPromptCost, wantPromptCost, usage)
-	}
-
-	if usage.OutputTokens != int(math.Ceil(8000*1.08)) {
-		t.Fatalf("output tokens = %d, want 8640", usage.OutputTokens)
+func TestEquivalentCacheV2Config_LegacyKeysNeverEnableV2(t *testing.T) {
+	for _, extra := range []map[string]any{
+		{equivalentCacheBillingEnabledKey: true},
+		{equivalentCacheBillingLegacyKiroEnabledKey: true},
+		{
+			equivalentCacheBillingEnabledKey:           true,
+			equivalentCacheBillingLegacyKiroEnabledKey: true,
+		},
+	} {
+		cfg, ok := equivalentCacheV2ConfigFromAccount(&Account{Extra: extra})
+		require.False(t, ok)
+		require.Equal(t, equivalentCacheV2Config{}, cfg)
 	}
 }
 
-func TestEquivalentCacheBilling_RewritesExistingMediumCacheToHighEquivalentCache(t *testing.T) {
-	usage := ClaudeUsage{
-		InputTokens:              600,
-		OutputTokens:             100,
-		CacheReadInputTokens:     1400,
-		CacheCreationInputTokens: 0,
-	}
-	pricing := &ModelPricing{
-		InputPricePerToken:         5e-6,
-		OutputPricePerToken:        25e-6,
-		CacheCreationPricePerToken: 6.25e-6,
-		CacheReadPricePerToken:     0.6e-6,
+func TestEquivalentCacheV2Config_RequiresExplicitPoolConfirmation(t *testing.T) {
+	account := &Account{Extra: map[string]any{
+		equivalentCacheV2ExtraKey: map[string]any{
+			"enabled":         true,
+			"mode":            "active",
+			"pricing_profile": equivalentCacheV2PricingProfile,
+		},
+	}}
+
+	cfg, ok := equivalentCacheV2ConfigFromAccount(account)
+
+	require.False(t, ok)
+	require.Equal(t, equivalentCacheV2Config{}, cfg)
+}
+
+func TestEquivalentCacheV2Config_ParsesShadowAndActive(t *testing.T) {
+	tests := []struct {
+		name string
+		mode equivalentCacheV2Mode
+	}{
+		{name: "shadow", mode: equivalentCacheV2ModeShadow},
+		{name: "active", mode: equivalentCacheV2ModeActive},
 	}
 
-	ok := applyEquivalentCacheBillingToUsage(&usage, pricing, defaultEquivalentCacheBillingConfig())
-	if !ok {
-		t.Fatal("expected equivalent cache billing to apply")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{Extra: map[string]any{
+				equivalentCacheV2ExtraKey: map[string]any{
+					"enabled":                true,
+					"mode":                   string(tt.mode),
+					"pricing_profile":        equivalentCacheV2PricingProfile,
+					"visible_rate_min":       0.96,
+					"visible_rate_max":       0.999,
+					"kiro_go_pool_confirmed": true,
+				},
+			}}
+
+			cfg, ok := equivalentCacheV2ConfigFromAccount(account)
+
+			require.True(t, ok)
+			require.True(t, cfg.Enabled)
+			require.Equal(t, tt.mode, cfg.Mode)
+			require.Equal(t, equivalentCacheV2PricingProfile, cfg.PricingProfile)
+			require.EqualValues(t, 960000, cfg.VisibleRateMinPPM)
+			require.EqualValues(t, 999000, cfg.VisibleRateMaxPPM)
+			require.True(t, cfg.KiroGoPoolConfirmed)
+		})
+	}
+}
+
+func TestEquivalentCacheV2Config_OffDoesNotEnableAllocation(t *testing.T) {
+	account := &Account{Extra: map[string]any{
+		equivalentCacheV2ExtraKey: map[string]any{
+			"enabled":                true,
+			"mode":                   "off",
+			"pricing_profile":        equivalentCacheV2PricingProfile,
+			"kiro_go_pool_confirmed": true,
+		},
+	}}
+
+	cfg, ok := equivalentCacheV2ConfigFromAccount(account)
+
+	require.False(t, ok)
+	require.Equal(t, equivalentCacheV2Config{}, cfg)
+}
+
+func TestEquivalentCacheV2Config_RejectsUnknownProfileAndInvalidRates(t *testing.T) {
+	tests := []map[string]any{
+		{
+			"enabled":                true,
+			"mode":                   "active",
+			"pricing_profile":        "unknown",
+			"kiro_go_pool_confirmed": true,
+		},
+		{
+			"enabled":                true,
+			"mode":                   "active",
+			"pricing_profile":        equivalentCacheV2PricingProfile,
+			"visible_rate_min":       1.0,
+			"visible_rate_max":       0.99,
+			"kiro_go_pool_confirmed": true,
+		},
+		{
+			"enabled":                true,
+			"mode":                   "invalid",
+			"pricing_profile":        equivalentCacheV2PricingProfile,
+			"kiro_go_pool_confirmed": true,
+		},
 	}
 
-	promptTokens := usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
-	cacheRate := float64(usage.CacheReadInputTokens) / float64(promptTokens)
-	if cacheRate < 0.95 {
-		t.Fatalf("cache rate = %.4f, want >= 0.95; usage=%+v", cacheRate, usage)
-	}
-
-	adjustedInputCost := math.Ceil(600*1.08) * pricing.InputPricePerToken
-	adjustedReadCost := math.Ceil(1400*1.08) * pricing.CacheReadPricePerToken
-	wantPromptCost := adjustedInputCost + adjustedReadCost
-	gotPromptCost := float64(usage.InputTokens)*pricing.InputPricePerToken +
-		float64(usage.CacheReadInputTokens)*pricing.CacheReadPricePerToken +
-		float64(usage.CacheCreationInputTokens)*pricing.CacheCreationPricePerToken
-	if math.Abs(gotPromptCost-wantPromptCost) > 0.00001 {
-		t.Fatalf("prompt cost = %.10f, want %.10f; usage=%+v", gotPromptCost, wantPromptCost, usage)
+	for _, nested := range tests {
+		cfg, ok := equivalentCacheV2ConfigFromAccount(&Account{Extra: map[string]any{
+			equivalentCacheV2ExtraKey: nested,
+		}})
+		require.False(t, ok)
+		require.Equal(t, equivalentCacheV2Config{}, cfg)
 	}
 }
