@@ -8,8 +8,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 const (
@@ -51,7 +53,16 @@ func applyEquivalentCacheV2JSON(
 ) equivalentCacheV2ResponseResult {
 	rawUsage, ok := parseEquivalentCacheV2Usage(body, usagePath)
 	result := equivalentCacheV2RawResponseResult(body, rawUsage, ok)
-	if !ok || hasNonZeroCacheUsage(rawUsage) || !equivalentCacheV2ResponsePlanEnabled(plan) {
+	planEnabled := equivalentCacheV2ResponsePlanEnabled(plan)
+	if !ok {
+		logEquivalentCacheV2ShadowResult(ctx, plan, planEnabled, "usage_invalid", UsageAllocationKindNone, false)
+		return result
+	}
+	if hasNonZeroCacheUsage(rawUsage) {
+		logEquivalentCacheV2ShadowResult(ctx, plan, planEnabled, "upstream_cache_present", UsageAllocationKindNone, false)
+		return result
+	}
+	if !planEnabled {
 		return result
 	}
 
@@ -85,7 +96,16 @@ func applyEquivalentCacheV2JSON(
 		VisibleRateMinPPM: plan.Config.VisibleRateMinPPM,
 		VisibleRateMaxPPM: plan.Config.VisibleRateMaxPPM,
 	})
-	if !ok || !allocation.Valid() || plan.Config.Mode != equivalentCacheV2ModeActive {
+	allocationValid := ok && allocation.Valid()
+	if plan.Config.Mode == equivalentCacheV2ModeShadow {
+		outcome := "allocated"
+		if !allocationValid {
+			outcome = "allocator_rejected"
+		}
+		logEquivalentCacheV2ShadowResult(ctx, plan, true, outcome, kind, allocationValid)
+		return result
+	}
+	if !allocationValid || plan.Config.Mode != equivalentCacheV2ModeActive {
 		return result
 	}
 
@@ -102,6 +122,25 @@ func applyEquivalentCacheV2JSON(
 		Allocated:     true,
 		UsageValid:    true,
 	}
+}
+
+func logEquivalentCacheV2ShadowResult(
+	ctx context.Context,
+	plan equivalentCacheV2ResponsePlan,
+	planEnabled bool,
+	outcome string,
+	kind UsageAllocationKind,
+	costConserved bool,
+) {
+	if !planEnabled || plan.Config.Mode != equivalentCacheV2ModeShadow {
+		return
+	}
+	logger.FromContext(ctx).Info("equivalent_cache_v2.shadow_result",
+		zap.Int64("account_id", plan.AccountID),
+		zap.String("outcome", outcome),
+		zap.Int16("allocation_kind", int16(kind)),
+		zap.Bool("cost_conserved", costConserved),
+	)
 }
 
 func equivalentCacheV2RawResponseResult(body []byte, rawUsage ClaudeUsage, usageValid bool) equivalentCacheV2ResponseResult {
@@ -127,6 +166,10 @@ func (s *GatewayService) prepareEquivalentCacheV2ResponsePlan(
 	billingModel string,
 	upstreamRequestID string,
 ) *equivalentCacheV2ResponsePlan {
+	if IsForceCacheBilling(ctx) {
+		return nil
+	}
+
 	cfg, ok := equivalentCacheV2ConfigFromAccount(account)
 	if !ok ||
 		s == nil ||

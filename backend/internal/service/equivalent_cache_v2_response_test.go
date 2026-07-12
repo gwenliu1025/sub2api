@@ -13,9 +13,12 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type equivalentCacheV2ResponseStateStoreStub struct {
@@ -102,8 +105,10 @@ func TestEquivalentCacheV2Response_ShadowComputesButReturnsRawBodyAndUsage(t *te
 	store := &equivalentCacheV2ResponseStateStoreStub{
 		decision: EquivalentCacheV2StateDecision{Create: true, Generation: 4},
 	}
+	core, observed := observer.New(zap.InfoLevel)
+	ctx := logger.IntoContext(context.Background(), zap.New(core))
 
-	result := applyEquivalentCacheV2JSON(context.Background(), body, "usage", equivalentCacheV2ResponsePlan{
+	result := applyEquivalentCacheV2JSON(ctx, body, "usage", equivalentCacheV2ResponsePlan{
 		Config: equivalentCacheV2Config{
 			Enabled:             true,
 			Mode:                equivalentCacheV2ModeShadow,
@@ -127,6 +132,52 @@ func TestEquivalentCacheV2Response_ShadowComputesButReturnsRawBodyAndUsage(t *te
 	require.Equal(t, body, result.Body)
 	require.Empty(t, result.HeaderValue())
 	require.Equal(t, 1, store.calls)
+
+	entries := observed.FilterMessage("equivalent_cache_v2.shadow_result").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	require.Equal(t, int64(701), fields["account_id"])
+	require.Equal(t, "allocated", fields["outcome"])
+	require.Equal(t, int16(UsageAllocationKindCreate1h), fields["allocation_kind"])
+	require.Equal(t, true, fields["cost_conserved"])
+	require.NotContains(t, fields, "request_id")
+	require.NotContains(t, fields, "session_key")
+	require.NotContains(t, fields, "raw_usage")
+}
+
+func TestEquivalentCacheV2Response_ShadowLogsInvalidUsageWithoutSensitiveFields(t *testing.T) {
+	body := []byte(`{"usage":{"input_tokens":2.5,"output_tokens":8}}`)
+	core, observed := observer.New(zap.InfoLevel)
+	ctx := logger.IntoContext(context.Background(), zap.New(core))
+
+	result := applyEquivalentCacheV2JSON(ctx, body, "usage", equivalentCacheV2ResponsePlan{
+		Config: equivalentCacheV2Config{
+			Enabled:             true,
+			Mode:                equivalentCacheV2ModeShadow,
+			PricingProfile:      equivalentCacheV2PricingProfile,
+			VisibleRateMinPPM:   equivalentCacheV2DefaultVisibleRateMinPPM,
+			VisibleRateMaxPPM:   equivalentCacheV2DefaultVisibleRateMaxPPM,
+			KiroGoPoolConfirmed: true,
+		},
+		AccountID:  702,
+		APIKeyID:   502,
+		SessionKey: "sensitive-session-hash",
+		RequestID:  "sensitive-request-id",
+		StateStore: &equivalentCacheV2ResponseStateStoreStub{},
+	})
+
+	require.False(t, result.Allocated)
+	require.Equal(t, body, result.Body)
+	entries := observed.FilterMessage("equivalent_cache_v2.shadow_result").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	require.Equal(t, int64(702), fields["account_id"])
+	require.Equal(t, "usage_invalid", fields["outcome"])
+	require.Equal(t, int16(UsageAllocationKindNone), fields["allocation_kind"])
+	require.Equal(t, false, fields["cost_conserved"])
+	require.NotContains(t, fields, "request_id")
+	require.NotContains(t, fields, "session_key")
+	require.NotContains(t, fields, "raw_usage")
 }
 
 func TestEquivalentCacheV2Response_InvalidOrRealCacheUsageFallsBackUntouched(t *testing.T) {
@@ -281,6 +332,53 @@ func TestEquivalentCacheV2Response_PreparePlanUsesFinalAccountGroupAndStableRequ
 	require.Equal(t, GenerateEquivalentCacheV2SessionKey(701, 501, parsed), plan.SessionKey)
 	require.Same(t, store, plan.StateStore)
 	require.Equal(t, equivalentCacheV2ModeActive, plan.Config.Mode)
+}
+
+func TestEquivalentCacheV2Response_PreparePlanSkipsForceCacheBilling(t *testing.T) {
+	groupID := int64(907)
+	parsed, err := ParseGatewayRequest(NewRequestBodyRef([]byte(`{
+		"model":"claude-sonnet-4",
+		"messages":[{"role":"user","content":"hello"}],
+		"metadata":{"user_id":"user-session-force"}
+	}`)), PlatformAnthropic)
+	require.NoError(t, err)
+	parsed.GroupID = &groupID
+	parsed.SessionContext = &SessionContext{APIKeyID: 507}
+
+	billing := &BillingService{fallbackPrices: map[string]*ModelPricing{
+		"claude-sonnet-4": {
+			InputPricePerToken:     5e-6,
+			OutputPricePerToken:    25e-6,
+			CacheReadPricePerToken: 0.6e-6,
+			CacheCreation5mPrice:   6.25e-6,
+			CacheCreation1hPrice:   10e-6,
+			SupportsCacheBreakdown: true,
+		},
+	}}
+	channelService := &ChannelService{}
+	channelCache := newEmptyChannelCache()
+	channelCache.loadedAt = time.Now()
+	channelService.cache.Store(channelCache)
+	svc := &GatewayService{
+		resolver:                    NewModelPricingResolver(channelService, billing),
+		equivalentCacheV2StateStore: &equivalentCacheV2ResponseStateStoreStub{},
+	}
+	account := &Account{
+		ID: 707,
+		Extra: map[string]any{
+			equivalentCacheV2ExtraKey: map[string]any{
+				"enabled":                true,
+				"mode":                   string(equivalentCacheV2ModeActive),
+				"pricing_profile":        equivalentCacheV2PricingProfile,
+				"kiro_go_pool_confirmed": true,
+			},
+		},
+	}
+	ctx := WithForceCacheBilling(context.Background())
+
+	plan := svc.prepareEquivalentCacheV2ResponsePlan(ctx, account, parsed, "claude-sonnet-4", "upstream-force")
+
+	require.Nil(t, plan)
 }
 
 func TestEquivalentCacheV2Response_PassthroughNonStreamingWritesActiveAllocation(t *testing.T) {

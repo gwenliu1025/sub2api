@@ -267,6 +267,15 @@ func TestHandleFailoverError_CacheBilling(t *testing.T) {
 	})
 }
 
+func TestFailoverStateForwardContext_PropagatesForceCacheBilling(t *testing.T) {
+	fs := NewFailoverState(3, false)
+	fs.ForceCacheBilling = true
+
+	ctx := fs.ForwardContext(context.Background())
+
+	require.True(t, service.IsForceCacheBilling(ctx))
+}
+
 // ---------------------------------------------------------------------------
 // HandleFailoverError — 同账号重试 (RetryableOnSameAccount)
 // ---------------------------------------------------------------------------

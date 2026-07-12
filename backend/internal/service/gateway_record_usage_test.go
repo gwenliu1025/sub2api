@@ -343,6 +343,192 @@ func TestGatewayServiceRecordUsage_EquivalentCacheV2InvalidAllocationLeavesAudit
 	require.Nil(t, usageRepo.lastLog.UsageAllocationKind)
 }
 
+func TestGatewayServiceRecordUsage_EquivalentCacheV2RequestedBillingModelMismatchLocksRawCost(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	groupID := int64(904)
+	mappedModel := "claude-sonnet-4"
+	requestedModel := "claude-3-haiku"
+	configureEquivalentCacheV2RecordUsagePricing(t, svc, groupID, mappedModel, 704)
+	svc.billingService.fallbackPrices["claude-3-haiku"] = &ModelPricing{
+		InputPricePerToken:     2e-6,
+		OutputPricePerToken:    3e-6,
+		CacheReadPricePerToken: 0.2e-6,
+		CacheCreation5mPrice:   2.5e-6,
+		CacheCreation1hPrice:   4e-6,
+		SupportsCacheBreakdown: true,
+	}
+
+	raw := ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}
+	allocation, ok := allocateEquivalentCacheV2(equivalentCacheV2AllocationInput{
+		RawUsage:          raw,
+		Kind:              UsageAllocationKindReadMajor,
+		RequestID:         "gateway_equivalent_cache_v2_requested_mismatch",
+		AccountID:         704,
+		SessionGeneration: 2,
+		VisibleRateMinPPM: equivalentCacheV2DefaultVisibleRateMinPPM,
+		VisibleRateMaxPPM: equivalentCacheV2DefaultVisibleRateMaxPPM,
+	})
+	require.True(t, ok)
+	require.True(t, allocation.Valid())
+
+	expectedCost, err := svc.billingService.CalculateCost(requestedModel, UsageTokens{
+		InputTokens:  raw.InputTokens,
+		OutputTokens: raw.OutputTokens,
+	}, 1.1)
+	require.NoError(t, err)
+
+	err = svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:              "gateway_equivalent_cache_v2_requested_mismatch",
+			Usage:                  cloneClaudeUsage(allocation.ResponseUsage),
+			RawUsage:               cloneClaudeUsage(raw),
+			ResponseUsage:          cloneClaudeUsage(allocation.ResponseUsage),
+			UsageAllocationVersion: equivalentCacheV2AlgorithmVersion,
+			UsageAllocationKind:    allocation.Kind,
+			Model:                  requestedModel,
+			UpstreamModel:          mappedModel,
+			Duration:               time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      504,
+			Quota:   100,
+			GroupID: &groupID,
+			Group:   &Group{ID: groupID, RateMultiplier: 1.1},
+		},
+		User:    &User{ID: 604},
+		Account: equivalentCacheV2RecordUsageAccount(704, equivalentCacheV2ModeActive),
+		ChannelUsageFields: ChannelUsageFields{
+			OriginalModel:      requestedModel,
+			ChannelMappedModel: mappedModel,
+			BillingModelSource: BillingModelSourceRequested,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Equal(t, raw.InputTokens, usageRepo.lastLog.InputTokens)
+	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
+	require.Zero(t, usageRepo.lastLog.CacheReadTokens)
+	require.Nil(t, usageRepo.lastLog.RawInputTokens)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationVersion)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationKind)
+	require.InDelta(t, expectedCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_EquivalentCacheV2ShadowForceCacheBillingPreservesBaselineCost(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	groupID := int64(905)
+	model := "claude-sonnet-4"
+	configureEquivalentCacheV2RecordUsagePricing(t, svc, groupID, model, 705)
+
+	raw := ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}
+	expectedCost, err := svc.billingService.CalculateCost(model, UsageTokens{
+		OutputTokens:    raw.OutputTokens,
+		CacheReadTokens: raw.InputTokens,
+	}, 1.1)
+	require.NoError(t, err)
+
+	err = svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:     "gateway_equivalent_cache_v2_shadow_force",
+			Usage:         cloneClaudeUsage(raw),
+			RawUsage:      cloneClaudeUsage(raw),
+			ResponseUsage: cloneClaudeUsage(raw),
+			Model:         model,
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      505,
+			Quota:   100,
+			GroupID: &groupID,
+			Group:   &Group{ID: groupID, RateMultiplier: 1.1},
+		},
+		User:              &User{ID: 605},
+		Account:           equivalentCacheV2RecordUsageAccount(705, equivalentCacheV2ModeShadow),
+		ForceCacheBilling: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Zero(t, usageRepo.lastLog.InputTokens)
+	require.Equal(t, raw.InputTokens, usageRepo.lastLog.CacheReadTokens)
+	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
+	require.Nil(t, usageRepo.lastLog.RawInputTokens)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationVersion)
+	require.InDelta(t, expectedCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_EquivalentCacheV2ActiveForceCacheBillingFallsBackToBaseline(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	groupID := int64(906)
+	model := "claude-sonnet-4"
+	configureEquivalentCacheV2RecordUsagePricing(t, svc, groupID, model, 706)
+
+	raw := ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}
+	allocation, ok := allocateEquivalentCacheV2(equivalentCacheV2AllocationInput{
+		RawUsage:          raw,
+		Kind:              UsageAllocationKindReadMajor,
+		RequestID:         "gateway_equivalent_cache_v2_active_force",
+		AccountID:         706,
+		SessionGeneration: 3,
+		VisibleRateMinPPM: equivalentCacheV2DefaultVisibleRateMinPPM,
+		VisibleRateMaxPPM: equivalentCacheV2DefaultVisibleRateMaxPPM,
+	})
+	require.True(t, ok)
+	require.True(t, allocation.Valid())
+
+	expectedCost, err := svc.billingService.CalculateCost(model, UsageTokens{
+		OutputTokens:    raw.OutputTokens,
+		CacheReadTokens: raw.InputTokens,
+	}, 1.1)
+	require.NoError(t, err)
+
+	err = svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:              "gateway_equivalent_cache_v2_active_force",
+			Usage:                  cloneClaudeUsage(allocation.ResponseUsage),
+			RawUsage:               cloneClaudeUsage(raw),
+			ResponseUsage:          cloneClaudeUsage(allocation.ResponseUsage),
+			UsageAllocationVersion: equivalentCacheV2AlgorithmVersion,
+			UsageAllocationKind:    allocation.Kind,
+			Model:                  model,
+			Duration:               time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      506,
+			Quota:   100,
+			GroupID: &groupID,
+			Group:   &Group{ID: groupID, RateMultiplier: 1.1},
+		},
+		User:              &User{ID: 606},
+		Account:           equivalentCacheV2RecordUsageAccount(706, equivalentCacheV2ModeActive),
+		ForceCacheBilling: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.Zero(t, usageRepo.lastLog.InputTokens)
+	require.Equal(t, raw.InputTokens, usageRepo.lastLog.CacheReadTokens)
+	require.Equal(t, raw.OutputTokens, usageRepo.lastLog.OutputTokens)
+	require.Nil(t, usageRepo.lastLog.RawInputTokens)
+	require.Nil(t, usageRepo.lastLog.RawOutputTokens)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationVersion)
+	require.Nil(t, usageRepo.lastLog.UsageAllocationKind)
+	require.InDelta(t, expectedCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expectedCost.ActualCost, billingRepo.lastCmd.BalanceCost, 1e-12)
+}
+
 func equivalentCacheV2RecordUsageAccount(id int64, mode equivalentCacheV2Mode) *Account {
 	return &Account{
 		ID: id,

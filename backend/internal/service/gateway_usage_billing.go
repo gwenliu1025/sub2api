@@ -661,20 +661,28 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	logResult := result
 	accountStatsResult := result
 	equivalentCacheV2Billing := false
-	if rawResult, responseResult, ok := s.prepareEquivalentCacheV2BillingResults(ctx, result, apiKey, account, billingModel); ok {
-		billingResult = rawResult
-		logResult = responseResult
-		accountStatsResult = rawResult
-		equivalentCacheV2Billing = true
+	productionResult := result
+	if rawResult, responseResult, allocationValid := s.prepareEquivalentCacheV2BillingResults(ctx, result, apiKey, account, billingModel); rawResult != nil {
+		productionResult = rawResult
+		if allocationValid && !input.ForceCacheBilling {
+			billingResult = rawResult
+			logResult = responseResult
+			accountStatsResult = rawResult
+			equivalentCacheV2Billing = true
+		} else {
+			billingResult = productionResult
+			logResult = productionResult
+			accountStatsResult = productionResult
+		}
 	}
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
 	// 用于粘性会话切换时的特殊计费处理
-	if !equivalentCacheV2Billing && input.ForceCacheBilling && result.Usage.InputTokens > 0 {
+	if !equivalentCacheV2Billing && input.ForceCacheBilling && productionResult.Usage.InputTokens > 0 {
 		logger.LegacyPrintf("service.gateway", "force_cache_billing: %d input_tokens → cache_read_input_tokens (account=%d)",
-			result.Usage.InputTokens, account.ID)
-		result.Usage.CacheReadInputTokens += result.Usage.InputTokens
-		result.Usage.InputTokens = 0
+			productionResult.Usage.InputTokens, account.ID)
+		productionResult.Usage.CacheReadInputTokens += productionResult.Usage.InputTokens
+		productionResult.Usage.InputTokens = 0
 	}
 
 	// Cache TTL Override: 确保计费时 token 分类与账号设置一致。
@@ -682,9 +690,12 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	cacheTTLOverridden := false
 	if !equivalentCacheV2Billing {
 		if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
-			applyCacheTTLOverride(&result.Usage, overrideTarget)
-			cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
+			applyCacheTTLOverride(&productionResult.Usage, overrideTarget)
+			cacheTTLOverridden = (productionResult.Usage.CacheCreation5mTokens + productionResult.Usage.CacheCreation1hTokens) > 0
 		}
+		billingResult = productionResult
+		logResult = productionResult
+		accountStatsResult = productionResult
 	}
 
 	// 获取费率倍数（优先级：用户专属 > 分组默认 > 系统默认）
@@ -775,9 +786,25 @@ func (s *GatewayService) prepareEquivalentCacheV2BillingResults(
 	account *Account,
 	billingModel string,
 ) (*ForwardResult, *ForwardResult, bool) {
+	if result == nil ||
+		result.UsageAllocationVersion != equivalentCacheV2AlgorithmVersion {
+		return nil, nil, false
+	}
+
+	rawUsage := cloneClaudeUsage(result.RawUsage)
+	rawResultValue := *result
+	rawResultValue.Usage = cloneClaudeUsage(rawUsage)
+	rawResultValue.RawUsage = cloneClaudeUsage(rawUsage)
+	rawResultValue.ResponseUsage = cloneClaudeUsage(rawUsage)
+	rawResultValue.UsageAllocationVersion = 0
+	rawResultValue.UsageAllocationKind = UsageAllocationKindNone
+	rawResult := &rawResultValue
+
+	responseResultValue := rawResultValue
+	responseResult := &responseResultValue
+
 	cfg, ok := equivalentCacheV2ConfigFromAccount(account)
 	if !ok ||
-		result == nil ||
 		apiKey == nil ||
 		apiKey.GroupID == nil ||
 		s == nil ||
@@ -791,49 +818,30 @@ func (s *GatewayService) prepareEquivalentCacheV2BillingResults(
 		GroupID: apiKey.GroupID,
 	})
 	if !equivalentCacheV2ResolvedPricingEligible(resolved) {
-		return nil, nil, false
+		return rawResult, responseResult, false
 	}
 
-	zeroUsage := ClaudeUsage{}
-	if result.RawUsage == zeroUsage && result.ResponseUsage == zeroUsage && result.Usage != zeroUsage {
-		return nil, nil, false
+	if cfg.Mode != equivalentCacheV2ModeActive {
+		return rawResult, responseResult, false
 	}
 
-	rawUsage := cloneClaudeUsage(result.RawUsage)
-	responseUsage := cloneClaudeUsage(rawUsage)
-	allocationValid := false
-	if cfg.Mode == equivalentCacheV2ModeActive &&
-		result.UsageAllocationVersion == equivalentCacheV2AlgorithmVersion {
-		rawCostUnits, rawCostOK := fixedInputCostUnits(rawUsage)
-		allocation := EquivalentCacheAllocation{
-			Version:        result.UsageAllocationVersion,
-			Kind:           result.UsageAllocationKind,
-			RawUsage:       cloneClaudeUsage(rawUsage),
-			ResponseUsage:  cloneClaudeUsage(result.ResponseUsage),
-			InputCostUnits: rawCostUnits,
-		}
-		if rawCostOK && allocation.Valid() {
-			responseUsage = cloneClaudeUsage(result.ResponseUsage)
-			allocationValid = true
-		}
+	rawCostUnits, rawCostOK := fixedInputCostUnits(rawUsage)
+	allocation := EquivalentCacheAllocation{
+		Version:        result.UsageAllocationVersion,
+		Kind:           result.UsageAllocationKind,
+		RawUsage:       cloneClaudeUsage(rawUsage),
+		ResponseUsage:  cloneClaudeUsage(result.ResponseUsage),
+		InputCostUnits: rawCostUnits,
+	}
+	if !rawCostOK || !allocation.Valid() {
+		return rawResult, responseResult, false
 	}
 
-	rawResultValue := *result
-	rawResultValue.Usage = cloneClaudeUsage(rawUsage)
-	rawResultValue.RawUsage = cloneClaudeUsage(rawUsage)
-	rawResultValue.ResponseUsage = cloneClaudeUsage(rawUsage)
-	rawResult := &rawResultValue
-
-	responseResultValue := *result
-	responseResultValue.Usage = cloneClaudeUsage(responseUsage)
+	responseResultValue = *result
+	responseResultValue.Usage = cloneClaudeUsage(result.ResponseUsage)
 	responseResultValue.RawUsage = cloneClaudeUsage(rawUsage)
-	responseResultValue.ResponseUsage = cloneClaudeUsage(responseUsage)
-	if !allocationValid {
-		responseResultValue.UsageAllocationVersion = 0
-		responseResultValue.UsageAllocationKind = UsageAllocationKindNone
-	}
-	responseResult := &responseResultValue
-
+	responseResultValue.ResponseUsage = cloneClaudeUsage(result.ResponseUsage)
+	responseResult = &responseResultValue
 	return rawResult, responseResult, true
 }
 

@@ -60,6 +60,13 @@ func NewFailoverState(maxSwitches int, hasBoundSession bool) *FailoverState {
 	}
 }
 
+func (s *FailoverState) ForwardContext(ctx context.Context) context.Context {
+	if s == nil || !s.ForceCacheBilling {
+		return ctx
+	}
+	return service.WithForceCacheBilling(ctx)
+}
+
 // HandleFailoverError 处理 UpstreamFailoverError，返回下一步动作。
 // 包含：缓存计费判断、同账号重试、临时封禁、切换计数、Antigravity 延时。
 func (s *FailoverState) HandleFailoverError(
