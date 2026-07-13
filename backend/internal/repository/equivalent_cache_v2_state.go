@@ -19,6 +19,7 @@ const (
 	equivalentCacheV2RefreshMinMilliseconds  = 45 * 60 * 1000
 	equivalentCacheV2RefreshSpanMilliseconds = 20 * 60 * 1000
 	equivalentCacheV2MinimumGrowth           = 1024
+	equivalentCacheV2ReadPromotionPercent    = 10
 )
 
 var equivalentCacheV2StateDecideScript = redis.NewScript(`
@@ -34,6 +35,7 @@ local refresh_min_ms = tonumber(ARGV[7])
 local refresh_span_ms = tonumber(ARGV[8])
 local minimum_growth = tonumber(ARGV[9])
 local algorithm_version = ARGV[10]
+local read_promotion_percent = tonumber(ARGV[11])
 
 local redis_time = redis.call("TIME")
 local now_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
@@ -65,6 +67,17 @@ local function refresh_offset_ms(generation)
   return sample % (refresh_span_ms + 1)
 end
 
+local function should_promote_read(generation)
+  if read_promotion_percent <= 0 then
+    return false
+  end
+  local material = request_fingerprint .. ":" .. account_id .. ":" ..
+    tostring(generation) .. ":" .. algorithm_version .. ":read-promotion"
+  local digest = redis.sha1hex(material)
+  local sample = tonumber(string.sub(digest, 1, 8), 16)
+  return sample % 100 < read_promotion_percent
+end
+
 local generation = tonumber(redis.call("HGET", key, "generation") or "0")
 if generation <= 0 then
   generation = 1
@@ -89,8 +102,9 @@ local protected = reads_since_create >= minimum_reads and
 local grew_enough = raw_input_tokens - last_create_tokens >= minimum_growth and
   raw_input_tokens * 4 >= last_create_tokens * 5
 local refresh_due = now_ms >= refresh_at_ms
+local promotion_due = should_promote_read(generation)
 
-if protected and (grew_enough or refresh_due) then
+if protected and (grew_enough or refresh_due or promotion_due) then
   generation = generation + 1
   redis.call("HSET", key,
     "last_create_at_ms", now_ms,
@@ -150,6 +164,7 @@ func (s *equivalentCacheV2StateStore) DecideAndUpdate(
 		equivalentCacheV2RefreshSpanMilliseconds,
 		equivalentCacheV2MinimumGrowth,
 		service.EquivalentCacheV2AlgorithmVersion,
+		equivalentCacheV2ReadPromotionPercent,
 	).Slice()
 	if err != nil {
 		return service.EquivalentCacheV2StateDecision{}, fmt.Errorf("decide equivalent cache v2 state: %w", err)

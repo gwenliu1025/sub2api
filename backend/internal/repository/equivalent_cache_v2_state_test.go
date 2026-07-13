@@ -133,7 +133,7 @@ func TestEquivalentCacheV2State_GrowthRejectsPercentOnly(t *testing.T) {
 
 	percentOnly, err := store.DecideAndUpdate(ctx, service.EquivalentCacheV2StateInput{
 		SessionKey:     "session",
-		RequestID:      "percent-only",
+		RequestID:      "percent-only-0",
 		RawInputTokens: 1250,
 	})
 	require.NoError(t, err)
@@ -207,6 +207,42 @@ func TestEquivalentCacheV2State_RefreshRequiresThreePriorReads(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, protected.Create)
 	require.EqualValues(t, 2, protected.Generation)
+}
+
+func TestEquivalentCacheV2State_PromotesSomeProtectedReadsToCreate(t *testing.T) {
+	store, mr := newEquivalentCacheV2StateTestStore(t)
+	ctx := context.Background()
+
+	first, err := store.DecideAndUpdate(ctx, service.EquivalentCacheV2StateInput{
+		SessionKey:     "session",
+		RequestID:      "create",
+		AccountID:      701,
+		RawInputTokens: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, first.Create)
+
+	for i := 0; i < 3; i++ {
+		read, err := store.DecideAndUpdate(ctx, service.EquivalentCacheV2StateInput{
+			SessionKey:     "session",
+			RequestID:      fmt.Sprintf("read-%d", i),
+			AccountID:      701,
+			RawInputTokens: 2000,
+		})
+		require.NoError(t, err)
+		require.False(t, read.Create)
+	}
+	advanceEquivalentCacheV2StateTime(t, mr, 10*time.Minute)
+
+	promoted, err := store.DecideAndUpdate(ctx, service.EquivalentCacheV2StateInput{
+		SessionKey:     "session",
+		RequestID:      "promotion-4",
+		AccountID:      701,
+		RawInputTokens: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, promoted.Create)
+	require.EqualValues(t, 2, promoted.Generation)
 }
 
 func TestEquivalentCacheV2State_ConcurrentNewSessionHasAtMostOneCreate(t *testing.T) {

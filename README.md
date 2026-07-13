@@ -55,7 +55,8 @@ See [Equivalent Cache Billing](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
 重建后的 `v0.1.152` 沿用已经合并的原作者 `v0.1.152` 基线，并继续包含本 Fork 的
 Kiro-Go 等效缓存 V2、原始成本锁定、等效缓存审计持久化、Fork 自有 Release 与
 Docker 更新能力，以及流式最终完整用量分配修复。本次同版本重建将同一会话再次
-创建缓存前的最低读取次数从 4 次调整为 3 次，适度提高缓存创建事件出现频率。
+创建缓存前的最低读取次数从 4 次调整为 3 次，并将约 10% 已通过保护条件的读取
+候选稳定提升为创建型，适度提高缓存创建事件出现频率。
 
 Use this fork's [Releases](https://github.com/gwenliu1025/sub2api/releases) and
 `ghcr.io/gwenliu1025/sub2api:X.Y.Z` images when deploying this version.
