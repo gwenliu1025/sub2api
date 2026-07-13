@@ -1657,6 +1657,7 @@ class PackagingArtifactsTest(unittest.TestCase):
             "Group=root",
             "Restart=on-failure",
             "RuntimeDirectory=sub2api-updater",
+            "RuntimeDirectoryPreserve=restart",
             "StateDirectory=sub2api-updater",
             "UMask=0007",
             "NoNewPrivileges=true",

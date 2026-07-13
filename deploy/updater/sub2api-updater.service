@@ -13,6 +13,7 @@ Restart=on-failure
 RestartSec=5s
 RuntimeDirectory=sub2api-updater
 RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=restart
 StateDirectory=sub2api-updater
 StateDirectoryMode=0700
 UMask=0007
