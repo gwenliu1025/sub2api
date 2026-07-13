@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -832,4 +833,67 @@ func TestApplyTokenOverrides_IntervalDoesNotPolluteFallbackPrices(t *testing.T) 
 	require.InDelta(t, 3e-6, fp.InputPricePerToken, 1e-12, "fallback InputPricePerToken polluted")
 	require.InDelta(t, 15e-6, fp.OutputPricePerToken, 1e-12, "fallback OutputPricePerToken polluted")
 	require.False(t, fp.ImageOutputPriceExplicit, "fallback ImageOutputPriceExplicit polluted")
+}
+
+func TestEquivalentCacheCleanupStandardCachePricesRemainModelRelative(t *testing.T) {
+	pricingService := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+		"claude-opus-4-6": {
+			InputCostPerToken:                   5e-6,
+			OutputCostPerToken:                  25e-6,
+			CacheReadInputTokenCost:             0.5e-6,
+			CacheCreationInputTokenCost:         6.25e-6,
+			CacheCreationInputTokenCostAbove1hr: 10e-6,
+		},
+		"claude-sonnet-4-6": {
+			InputCostPerToken:                   3e-6,
+			OutputCostPerToken:                  15e-6,
+			CacheReadInputTokenCost:             0.3e-6,
+			CacheCreationInputTokenCost:         3.75e-6,
+			CacheCreationInputTokenCostAbove1hr: 6e-6,
+		},
+		"claude-haiku-4-5": {
+			InputCostPerToken:                   1e-6,
+			OutputCostPerToken:                  5e-6,
+			CacheReadInputTokenCost:             0.1e-6,
+			CacheCreationInputTokenCost:         1.25e-6,
+			CacheCreationInputTokenCostAbove1hr: 2e-6,
+		},
+	}}
+	billing := &BillingService{
+		pricingService: pricingService,
+		fallbackPrices: map[string]*ModelPricing{},
+	}
+
+	for _, model := range []string{"claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"} {
+		t.Run(model, func(t *testing.T) {
+			pricing, err := billing.GetModelPricing(model)
+			require.NoError(t, err)
+			require.True(t, pricing.SupportsCacheBreakdown)
+			require.InDelta(t, pricing.InputPricePerToken*0.10, pricing.CacheReadPricePerToken, 1e-12)
+			require.InDelta(t, pricing.InputPricePerToken*1.25, pricing.CacheCreation5mPrice, 1e-12)
+			require.InDelta(t, pricing.InputPricePerToken*2.00, pricing.CacheCreation1hPrice, 1e-12)
+		})
+	}
+}
+
+func TestEquivalentCacheCleanupRejectsNonStandardCachePrice(t *testing.T) {
+	const model = "claude-opus-invalid-cache-price"
+	billing := &BillingService{
+		pricingService: &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+			model: {
+				InputCostPerToken:                   5e-6,
+				OutputCostPerToken:                  25e-6,
+				CacheReadInputTokenCost:             0.6e-6,
+				CacheCreationInputTokenCost:         6.25e-6,
+				CacheCreationInputTokenCostAbove1hr: 10e-6,
+			},
+		}},
+		fallbackPrices: map[string]*ModelPricing{},
+	}
+
+	_, err := billing.GetModelPricing(model)
+
+	require.Error(t, err, "不满足标准相对倍率的缓存价格必须在配置验收时失败")
+	require.Contains(t, err.Error(), model)
+	require.Contains(t, strings.ToLower(err.Error()), "cache", "验收错误必须明确指出缓存价格配置问题")
 }

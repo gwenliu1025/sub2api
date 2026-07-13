@@ -1115,3 +1115,55 @@ func TestGatewayServiceRecordUsage_ReasoningEffortNil(t *testing.T) {
 	require.NotNil(t, usageRepo.lastLog)
 	require.Nil(t, usageRepo.lastLog.ReasoningEffort)
 }
+
+func TestEquivalentCacheCleanupGroupMultiplierAppliesAfterBaseCost(t *testing.T) {
+	usage := ClaudeUsage{
+		InputTokens:              100,
+		OutputTokens:             20,
+		CacheCreationInputTokens: 30,
+		CacheReadInputTokens:     40,
+		CacheCreation5mTokens:    30,
+	}
+
+	run := func(t *testing.T, groupID int64, multiplier float64) *UsageLog {
+		t.Helper()
+		usageRepo := &openAIRecordUsageLogRepoStub{}
+		billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+		svc := newGatewayRecordUsageServiceWithBillingRepoForTest(
+			usageRepo,
+			billingRepo,
+			&openAIRecordUsageUserRepoStub{},
+			&openAIRecordUsageSubRepoStub{},
+		)
+
+		err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+			Result: &ForwardResult{
+				RequestID: "equivalent-cache-cleanup-group-rate",
+				Usage:     usage,
+				Model:     "claude-sonnet-4",
+				Duration:  time.Second,
+			},
+			APIKey: &APIKey{
+				ID:      groupID,
+				GroupID: &groupID,
+				Group: &Group{
+					ID:             groupID,
+					RateMultiplier: multiplier,
+				},
+			},
+			User:    &User{ID: 601},
+			Account: &Account{ID: 701},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, usageRepo.lastLog)
+		return usageRepo.lastLog
+	}
+
+	lowRate := run(t, 901, 0.1)
+	highRate := run(t, 902, 0.2)
+
+	require.InDelta(t, lowRate.TotalCost, highRate.TotalCost, 1e-12, "相同 usage 与模型的基础费用不得随分组倍率变化")
+	require.InDelta(t, lowRate.TotalCost*0.1, lowRate.ActualCost, 1e-12)
+	require.InDelta(t, highRate.TotalCost*0.2, highRate.ActualCost, 1e-12)
+	require.InDelta(t, lowRate.ActualCost*2, highRate.ActualCost, 1e-12, "倍率只能在基础费用计算完成后按比例应用")
+}

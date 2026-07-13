@@ -1168,23 +1168,26 @@ func TestGatewayService_ParseSSEUsagePassthrough_MessageStartFallbacks(t *testin
 	require.Equal(t, 4, usage.CacheCreation1hTokens)
 }
 
-func TestGatewayService_ParseSSEUsagePassthrough_MessageDeltaSelectiveOverwrite(t *testing.T) {
+func TestEquivalentCacheCleanupFinalMessageDeltaOverridesNativeUsage(t *testing.T) {
 	svc := &GatewayService{}
-	usage := &ClaudeUsage{
-		InputTokens:           10,
-		CacheCreation5mTokens: 2,
-		CacheCreation1hTokens: 6,
-	}
-	data := `{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":5,"cache_creation_input_tokens":8,"cache_read_input_tokens":0,"cached_tokens":11,"cache_creation":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":0}}}`
+	usage := &ClaudeUsage{OutputTokens: 102}
+	svc.parseSSEUsagePassthrough(
+		`{"type":"message_start","message":{"usage":{"input_tokens":101,"cache_creation_input_tokens":103,"cache_read_input_tokens":104,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":103}}}}`,
+		usage,
+	)
+	svc.parseSSEUsagePassthrough(
+		`{"type":"message_delta","usage":{"input_tokens":11,"output_tokens":12,"cache_creation_input_tokens":13,"cache_read_input_tokens":14,"cache_creation":{"ephemeral_5m_input_tokens":13,"ephemeral_1h_input_tokens":0}}}`,
+		usage,
+	)
 
-	svc.parseSSEUsagePassthrough(data, usage)
-
-	require.Equal(t, 10, usage.InputTokens, "message_delta 中 0 值不应覆盖已有 input_tokens")
-	require.Equal(t, 5, usage.OutputTokens)
-	require.Equal(t, 8, usage.CacheCreationInputTokens)
-	require.Equal(t, 11, usage.CacheReadInputTokens, "cache_read_input_tokens 为空时应回退到 cached_tokens")
-	require.Equal(t, 1, usage.CacheCreation5mTokens)
-	require.Equal(t, 6, usage.CacheCreation1hTokens, "message_delta 中 0 值不应覆盖已有 1h 明细")
+	require.Equal(t, ClaudeUsage{
+		InputTokens:              11,
+		OutputTokens:             12,
+		CacheCreationInputTokens: 13,
+		CacheReadInputTokens:     14,
+		CacheCreation5mTokens:    13,
+		CacheCreation1hTokens:    0,
+	}, *usage, "最终 message_delta.usage 必须完整覆盖 message_start 的临时 usage，显式 0 也不能保留旧值")
 }
 
 func TestGatewayService_ParseSSEUsagePassthrough_NoopCases(t *testing.T) {
@@ -1243,6 +1246,21 @@ func TestParseClaudeUsageFromResponseBody(t *testing.T) {
 		require.Equal(t, 9, got.CacheCreationInputTokens, "已显式提供聚合字段时不应被明细覆盖")
 		require.Equal(t, 7, got.CacheReadInputTokens, "已显式提供 cache_read_input_tokens 时不应回退 cached_tokens")
 	})
+}
+
+func TestEquivalentCacheCleanupSynchronousNativeAnthropicUsage(t *testing.T) {
+	body := []byte(`{"usage":{"input_tokens":21,"output_tokens":34,"cache_creation_input_tokens":13,"cache_read_input_tokens":8,"cache_creation":{"ephemeral_5m_input_tokens":5,"ephemeral_1h_input_tokens":8}}}`)
+
+	usage := parseClaudeUsageFromResponseBody(body)
+
+	require.Equal(t, ClaudeUsage{
+		InputTokens:              21,
+		OutputTokens:             34,
+		CacheCreationInputTokens: 13,
+		CacheReadInputTokens:     8,
+		CacheCreation5mTokens:    5,
+		CacheCreation1hTokens:    8,
+	}, *usage, "同步响应必须原样解析标准 Anthropic usage 的六类字段")
 }
 
 func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingErrTooLong(t *testing.T) {
