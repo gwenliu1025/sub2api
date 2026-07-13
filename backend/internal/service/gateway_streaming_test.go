@@ -56,18 +56,20 @@ func TestParseSSEUsage_MessageDelta(t *testing.T) {
 	require.Equal(t, 0, usage.InputTokens, "message_delta 的 output_tokens 不应影响已有的 input_tokens")
 }
 
-func TestParseSSEUsage_DeltaDoesNotOverwriteStartValues(t *testing.T) {
+func TestParseSSEUsage_增量显式零覆盖起始值(t *testing.T) {
 	svc := newMinimalGatewayService()
 	usage := &ClaudeUsage{}
 
-	// 先处理 message_start
-	svc.parseSSEUsage(`{"type":"message_start","message":{"usage":{"input_tokens":100}}}`, usage)
+	svc.parseSSEUsage(`{"type":"message_start","message":{"usage":{"input_tokens":100,"cache_creation_input_tokens":30,"cache_read_input_tokens":60}}}`, usage)
 	require.Equal(t, 100, usage.InputTokens)
+	require.Equal(t, 30, usage.CacheCreationInputTokens)
+	require.Equal(t, 60, usage.CacheReadInputTokens)
 
-	// 再处理 message_delta（output_tokens > 0, input_tokens = 0）
-	svc.parseSSEUsage(`{"type":"message_delta","usage":{"output_tokens":50}}`, usage)
-	require.Equal(t, 100, usage.InputTokens, "delta 中 input_tokens=0 不应覆盖 start 中的值")
-	require.Equal(t, 50, usage.OutputTokens)
+	svc.parseSSEUsage(`{"type":"message_delta","usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`, usage)
+	require.Zero(t, usage.InputTokens, "增量中的显式零值必须覆盖起始输入 token")
+	require.Zero(t, usage.OutputTokens, "增量中的显式零值必须写入输出 token")
+	require.Zero(t, usage.CacheCreationInputTokens, "增量中的显式零值必须覆盖缓存创建 token")
+	require.Zero(t, usage.CacheReadInputTokens, "增量中的显式零值必须覆盖缓存读取 token")
 }
 
 func TestParseSSEUsage_DeltaOverwritesWithNonZero(t *testing.T) {
@@ -82,19 +84,17 @@ func TestParseSSEUsage_DeltaOverwritesWithNonZero(t *testing.T) {
 	require.Equal(t, 60, usage.CacheReadInputTokens)
 }
 
-func TestParseSSEUsage_DeltaDoesNotResetCacheCreationBreakdown(t *testing.T) {
+func TestParseSSEUsage_增量显式零覆盖缓存创建明细(t *testing.T) {
 	svc := newMinimalGatewayService()
 	usage := &ClaudeUsage{}
 
-	// 先在 message_start 中写入非零 5m/1h 明细
 	svc.parseSSEUsage(`{"type":"message_start","message":{"usage":{"input_tokens":100,"cache_creation":{"ephemeral_5m_input_tokens":30,"ephemeral_1h_input_tokens":70}}}}`, usage)
 	require.Equal(t, 30, usage.CacheCreation5mTokens)
 	require.Equal(t, 70, usage.CacheCreation1hTokens)
 
-	// 后续 delta 带默认 0，不应覆盖已有非零值
 	svc.parseSSEUsage(`{"type":"message_delta","usage":{"output_tokens":12,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}}`, usage)
-	require.Equal(t, 30, usage.CacheCreation5mTokens, "delta 的 0 值不应重置 5m 明细")
-	require.Equal(t, 70, usage.CacheCreation1hTokens, "delta 的 0 值不应重置 1h 明细")
+	require.Zero(t, usage.CacheCreation5mTokens, "增量中的显式零值必须覆盖 5m 缓存创建 token")
+	require.Zero(t, usage.CacheCreation1hTokens, "增量中的显式零值必须覆盖 1h 缓存创建 token")
 	require.Equal(t, 12, usage.OutputTokens)
 }
 
@@ -164,6 +164,38 @@ func TestHandleStreamingResponse_CacheTokens(t *testing.T) {
 	require.Equal(t, 15, result.usage.OutputTokens)
 	require.Equal(t, 20, result.usage.CacheCreationInputTokens)
 	require.Equal(t, 30, result.usage.CacheReadInputTokens)
+}
+
+func TestHandleStreamingResponse_最终增量显式零覆盖全部Usage字段(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newMinimalGatewayService()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	pr, pw := io.Pipe()
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: pr}
+
+	go func() {
+		defer func() { _ = pw.Close() }()
+		_, _ = pw.Write([]byte("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":20,\"cache_read_input_tokens\":30,\"cache_creation\":{\"ephemeral_5m_input_tokens\":8,\"ephemeral_1h_input_tokens\":12}}}}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":15}}\n\n"))
+		_, _ = pw.Write([]byte("data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0}}}\n\n"))
+		_, _ = pw.Write([]byte("data: [DONE]\n\n"))
+	}()
+
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	_ = pr.Close()
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Zero(t, result.usage.InputTokens)
+	require.Zero(t, result.usage.OutputTokens)
+	require.Zero(t, result.usage.CacheCreationInputTokens)
+	require.Zero(t, result.usage.CacheReadInputTokens)
+	require.Zero(t, result.usage.CacheCreation5mTokens)
+	require.Zero(t, result.usage.CacheCreation1hTokens)
 }
 
 func TestHandleStreamingResponse_EmptyStream(t *testing.T) {

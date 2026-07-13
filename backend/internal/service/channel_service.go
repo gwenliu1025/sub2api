@@ -605,7 +605,70 @@ func validatePricingEntries(pricing []ChannelModelPricing) error {
 	if err := validatePricingIntervals(pricing); err != nil {
 		return err
 	}
-	return validatePricingBillingMode(pricing)
+	if err := validatePricingBillingMode(pricing); err != nil {
+		return err
+	}
+	return validateClaudeChannelCachePricing(pricing)
+}
+
+func validateClaudeChannelCachePricing(pricing []ChannelModelPricing) error {
+	for _, p := range pricing {
+		if !isClaudeChannelPricing(p) {
+			continue
+		}
+		if p.CacheWritePrice != nil {
+			return infraerrors.BadRequest(
+				"CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED",
+				fmt.Sprintf("Claude 模型 %v 不能使用单一 cache_write_price 覆盖 5m/1h 标准写入价格", p.Models),
+			)
+		}
+		if err := validateClaudeChannelCacheReadPrice(p.Models, "flat", p.InputPrice, p.CacheReadPrice); err != nil {
+			return err
+		}
+		for i, interval := range p.Intervals {
+			if interval.CacheWritePrice != nil {
+				return infraerrors.BadRequest(
+					"CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED",
+					fmt.Sprintf("Claude 模型 %v 的区间 #%d 不能使用单一 cache_write_price 覆盖 5m/1h 标准写入价格", p.Models, i+1),
+				)
+			}
+			if err := validateClaudeChannelCacheReadPrice(
+				p.Models,
+				fmt.Sprintf("区间 #%d", i+1),
+				interval.InputPrice,
+				interval.CacheReadPrice,
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func isClaudeChannelPricing(pricing ChannelModelPricing) bool {
+	if strings.EqualFold(strings.TrimSpace(pricing.Platform), PlatformAnthropic) {
+		return true
+	}
+	for _, model := range pricing.Models {
+		if containsClaudeModelIdentifier(model) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateClaudeChannelCacheReadPrice(models []string, location string, inputPrice, cacheReadPrice *float64) error {
+	if cacheReadPrice == nil {
+		return nil
+	}
+	if inputPrice == nil || *inputPrice <= 0 ||
+		!cachePricesEqual(*cacheReadPrice, *inputPrice*claudeCacheReadRatio) {
+		return infraerrors.BadRequest(
+			"CLAUDE_CACHE_PRICE_RATIO_INVALID",
+			fmt.Sprintf("Claude 模型 %v 的 %s cache_read_price 必须等于 input_price 的 0.10 倍", models, location),
+		)
+	}
+	return nil
 }
 
 // validatePricingBillingMode 校验计费模式配置：按次/图片模式必须配价格或区间，所有价格字段不能为负，区间至少有一个价格字段。

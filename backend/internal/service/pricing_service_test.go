@@ -46,6 +46,123 @@ func TestParsePricingData_ParsesPriorityAndServiceTierFields(t *testing.T) {
 	require.True(t, pricing.SupportsServiceTier)
 }
 
+func TestParsePricingData_拒绝Claude非标准缓存价格(t *testing.T) {
+	tests := []struct {
+		name          string
+		model         string
+		provider      string
+		cacheRead     float64
+		cacheWrite5m  float64
+		cacheWrite1h  float64
+		expectedField string
+	}{
+		{
+			name:          "标准模型名拒绝非标准读取价",
+			model:         "claude-opus-4-6",
+			provider:      "anthropic",
+			cacheRead:     0.6e-6,
+			cacheWrite5m:  6.25e-6,
+			cacheWrite1h:  10e-6,
+			expectedField: "cache_read_input_token_cost",
+		},
+		{
+			name:          "provider别名拒绝非标准5m写入价",
+			model:         "anthropic/claude-opus-4-6",
+			provider:      "anthropic",
+			cacheRead:     0.5e-6,
+			cacheWrite5m:  7e-6,
+			cacheWrite1h:  10e-6,
+			expectedField: "cache_creation_input_token_cost",
+		},
+		{
+			name:          "Bedrock别名拒绝非标准1h写入价",
+			model:         "us.anthropic.claude-opus-4-6-v1:0",
+			provider:      "bedrock",
+			cacheRead:     0.5e-6,
+			cacheWrite5m:  6.25e-6,
+			cacheWrite1h:  6.25e-6,
+			expectedField: "cache_creation_input_token_cost_above_1hr",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{
+				tt.model: map[string]any{
+					"input_cost_per_token":                      5e-6,
+					"output_cost_per_token":                     25e-6,
+					"cache_read_input_token_cost":               tt.cacheRead,
+					"cache_creation_input_token_cost":           tt.cacheWrite5m,
+					"cache_creation_input_token_cost_above_1hr": tt.cacheWrite1h,
+					"litellm_provider":                          tt.provider,
+					"supports_prompt_caching":                   true,
+				},
+			})
+			require.NoError(t, err)
+
+			_, err = (&PricingService{}).parsePricingData(body)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.model)
+			require.Contains(t, err.Error(), tt.expectedField)
+		})
+	}
+}
+
+func TestParsePricingData_接受Claude标准缓存价格及别名(t *testing.T) {
+	body := []byte(`{
+		"claude-opus-4-6": {
+			"input_cost_per_token": 0.000005,
+			"output_cost_per_token": 0.000025,
+			"cache_read_input_token_cost": 0.0000005,
+			"cache_creation_input_token_cost": 0.00000625,
+			"cache_creation_input_token_cost_above_1hr": 0.00001,
+			"litellm_provider": "anthropic"
+		},
+		"anthropic/claude-sonnet-4-6": {
+			"input_cost_per_token": 0.000003,
+			"output_cost_per_token": 0.000015,
+			"cache_read_input_token_cost": 0.0000003,
+			"cache_creation_input_token_cost": 0.00000375,
+			"cache_creation_input_token_cost_above_1hr": 0.000006,
+			"litellm_provider": "anthropic"
+		},
+		"us.anthropic.claude-haiku-4-5-v1:0": {
+			"input_cost_per_token": 0.000001,
+			"output_cost_per_token": 0.000005,
+			"cache_read_input_token_cost": 0.0000001,
+			"cache_creation_input_token_cost": 0.00000125,
+			"cache_creation_input_token_cost_above_1hr": 0.000002,
+			"litellm_provider": "bedrock"
+		}
+	}`)
+
+	data, err := (&PricingService{}).parsePricingData(body)
+	require.NoError(t, err)
+	require.Len(t, data, 3)
+}
+
+func TestLoadPricingData_拒绝Claude非标准缓存价格(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "pricing.json")
+	require.NoError(t, os.WriteFile(filePath, []byte(`{
+		"claude-opus-4-6": {
+			"input_cost_per_token": 0.000005,
+			"output_cost_per_token": 0.000025,
+			"cache_read_input_token_cost": 0.0000005,
+			"cache_creation_input_token_cost": 0.00000625,
+			"cache_creation_input_token_cost_above_1hr": 0.00000625,
+			"litellm_provider": "anthropic"
+		}
+	}`), 0644))
+
+	existing := &LiteLLMModelPricing{InputCostPerToken: 1e-6}
+	svc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{"existing-model": existing}}
+
+	err := svc.loadPricingData(filePath)
+	require.Error(t, err)
+	require.Same(t, existing, svc.pricingData["existing-model"])
+	require.NotContains(t, svc.pricingData, "claude-opus-4-6")
+}
+
 func TestBillingService_GPT56CacheWritePricingUsesOfficialMultiplier(t *testing.T) {
 	tests := []struct {
 		model             string

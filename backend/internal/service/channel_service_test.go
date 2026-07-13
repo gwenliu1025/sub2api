@@ -1431,6 +1431,42 @@ func TestCreate_InvalidPricingIntervals(t *testing.T) {
 	require.Contains(t, err.Error(), "overlap")
 }
 
+func TestCreate_拒绝ClaudeFlat缓存写入价格(t *testing.T) {
+	createCalled := false
+	repo := &mockChannelRepository{
+		existsByNameFn: func(_ context.Context, _ string) (bool, error) {
+			return false, nil
+		},
+		createFn: func(_ context.Context, ch *Channel) error {
+			createCalled = true
+			ch.ID = 1
+			return nil
+		},
+		getByIDFn: func(_ context.Context, id int64) (*Channel, error) {
+			return &Channel{ID: id, Name: "claude-channel", Status: StatusActive}, nil
+		},
+		listAllFn: func(_ context.Context) ([]Channel, error) {
+			return nil, nil
+		},
+	}
+	svc := newTestChannelService(repo)
+
+	_, err := svc.Create(context.Background(), &CreateChannelInput{
+		Name: "claude-channel",
+		ModelPricing: []ChannelModelPricing{{
+			Platform:        PlatformAnthropic,
+			Models:          []string{"anthropic/claude-opus-4-6"},
+			BillingMode:     BillingModeToken,
+			InputPrice:      testPtrFloat64(5e-6),
+			CacheWritePrice: testPtrFloat64(6.25e-6),
+		}},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED")
+	require.False(t, createCalled, "非法 Claude 缓存写入价不得进入仓储层")
+}
+
 func TestCreate_DefaultBillingModelSource(t *testing.T) {
 	var capturedChannel *Channel
 	repo := &mockChannelRepository{
@@ -1651,6 +1687,138 @@ func TestUpdate_InvalidPricingIntervals(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "INVALID_PRICING_INTERVALS")
 	require.Contains(t, err.Error(), "unbounded")
+}
+
+func TestUpdate_拒绝ClaudeInterval缓存写入价格(t *testing.T) {
+	updateCalled := false
+	existing := &Channel{
+		ID:     1,
+		Name:   "original",
+		Status: StatusActive,
+	}
+	repo := &mockChannelRepository{
+		getByIDFn: func(_ context.Context, _ int64) (*Channel, error) {
+			return existing.Clone(), nil
+		},
+		updateFn: func(_ context.Context, _ *Channel) error {
+			updateCalled = true
+			return nil
+		},
+		listAllFn: func(_ context.Context) ([]Channel, error) {
+			return nil, nil
+		},
+	}
+	svc := newTestChannelService(repo)
+	pricing := []ChannelModelPricing{{
+		Platform:    PlatformAnthropic,
+		Models:      []string{"us.anthropic.claude-opus-4-6-v1:0"},
+		BillingMode: BillingModeToken,
+		Intervals: []PricingInterval{{
+			MinTokens:       0,
+			MaxTokens:       testPtrInt(200000),
+			InputPrice:      testPtrFloat64(5e-6),
+			CacheWritePrice: testPtrFloat64(6.25e-6),
+		}},
+	}}
+
+	_, err := svc.Update(context.Background(), 1, &UpdateChannelInput{ModelPricing: &pricing})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED")
+	require.False(t, updateCalled, "非法 Claude 区间缓存写入价不得进入仓储层")
+}
+
+func TestValidatePricingEntries_校验Claude缓存读取倍率(t *testing.T) {
+	tests := []struct {
+		name    string
+		pricing ChannelModelPricing
+		wantErr bool
+	}{
+		{
+			name: "flat标准倍率通过",
+			pricing: ChannelModelPricing{
+				Platform:       PlatformAnthropic,
+				Models:         []string{"claude-opus-4-6"},
+				InputPrice:     testPtrFloat64(5e-6),
+				CacheReadPrice: testPtrFloat64(0.5e-6),
+			},
+		},
+		{
+			name: "flat非标准倍率拒绝",
+			pricing: ChannelModelPricing{
+				Platform:       PlatformAnthropic,
+				Models:         []string{"claude-opus-4-6"},
+				InputPrice:     testPtrFloat64(5e-6),
+				CacheReadPrice: testPtrFloat64(0.6e-6),
+			},
+			wantErr: true,
+		},
+		{
+			name: "flat缺少输入价无法验收",
+			pricing: ChannelModelPricing{
+				Platform:       PlatformAnthropic,
+				Models:         []string{"claude-opus-4-6"},
+				CacheReadPrice: testPtrFloat64(0.5e-6),
+			},
+			wantErr: true,
+		},
+		{
+			name: "interval标准倍率通过",
+			pricing: ChannelModelPricing{
+				Platform: PlatformAnthropic,
+				Models:   []string{"claude-opus-4-6"},
+				Intervals: []PricingInterval{{
+					MinTokens:      0,
+					MaxTokens:      testPtrInt(200000),
+					InputPrice:     testPtrFloat64(5e-6),
+					CacheReadPrice: testPtrFloat64(0.5e-6),
+				}},
+			},
+		},
+		{
+			name: "interval非标准倍率拒绝",
+			pricing: ChannelModelPricing{
+				Platform: PlatformAnthropic,
+				Models:   []string{"claude-opus-4-6"},
+				Intervals: []PricingInterval{{
+					MinTokens:      0,
+					MaxTokens:      testPtrInt(200000),
+					InputPrice:     testPtrFloat64(5e-6),
+					CacheReadPrice: testPtrFloat64(0.6e-6),
+				}},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePricingEntries([]ChannelModelPricing{tt.pricing})
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "CLAUDE_CACHE_PRICE_RATIO_INVALID")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidatePricingEntries_保留非Claude缓存写入价格(t *testing.T) {
+	err := validatePricingEntries([]ChannelModelPricing{{
+		Platform:        PlatformOpenAI,
+		Models:          []string{"gpt-5.6-sol"},
+		InputPrice:      testPtrFloat64(5e-6),
+		CacheWritePrice: testPtrFloat64(6.25e-6),
+		Intervals: []PricingInterval{{
+			MinTokens:       0,
+			MaxTokens:       testPtrInt(200000),
+			InputPrice:      testPtrFloat64(5e-6),
+			CacheWritePrice: testPtrFloat64(6.25e-6),
+		}},
+	}})
+
+	require.NoError(t, err)
 }
 
 func TestUpdate_InvalidatesChannelCache(t *testing.T) {

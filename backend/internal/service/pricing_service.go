@@ -433,6 +433,9 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 			skipped++
 			continue
 		}
+		if err := validateClaudeRawCachePricing(modelName, &entry); err != nil {
+			return nil, err
+		}
 
 		// 只保留有有效价格的条目
 		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil {

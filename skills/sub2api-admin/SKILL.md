@@ -40,20 +40,17 @@ node scripts/sub2api-admin.js error-rules list
 node scripts/sub2api-admin.js tls-profiles list
 ```
 
-## Kiro Equivalent Cache V2
+## Kiro-Go 原生 Usage
 
-Use this only for self-owned Kiro accounts in new-machine or warmup environments. Production entry machines are read-only for this workflow; do not stop, restart, or mutate them.
+Kiro-Go 直接生成标准 Anthropic usage。Sub2API 只解析
+`input_tokens`、`output_tokens`、`cache_read_input_tokens`、
+`cache_creation_input_tokens` 及 5m/1h 缓存创建明细，并按正常模型价格、
+渠道配置和分组倍率计费。
 
-1. Verify the target first: `accounts list --search <name>` and `accounts get <id>`.
-2. Start in `shadow` with the complete nested V2 object:
-   `accounts bulk-update --ids <id> --json '{"extra":{"equivalent_cache_allocation_v2":{"enabled":true,"mode":"shadow","pricing_profile":"kiro_unified_5_25_0_6_6_25_10","visible_rate_min":0.96,"visible_rate_max":0.999,"kiro_go_pool_confirmed":true}}}'`
-3. Re-run `accounts get <id>` and verify the complete nested object. Observe shadow results before requesting separate authorization to change `mode` to `active`.
-4. Roll back without restarting services:
-   `accounts bulk-update --ids <id> --json '{"extra":{"equivalent_cache_allocation_v2":{"enabled":false}}}'`
-
-`bulk-update` merges keys at the top level of `extra`, preserving unrelated runtime configuration. The nested `equivalent_cache_allocation_v2` object is one top-level value, so fetch the current account and resend the complete nested object whenever changing one of its subkeys. Do not use a partial nested object for shadow-to-active changes.
-
-Do not enable V2 for external Kiro upstream accounts. Do not route `cloudflare-temp-email` through the relay network. Legacy equivalent-cache keys cannot activate V2 and must not be used.
+`equivalent_cache_*` 与 `equivalent_cache_allocation_v2` 已废弃且不再生效。
+不要向账号 `extra` 写入这些字段，也不要尝试启用、切换模式或回滚旧策略。
+排查用量时只使用 `accounts usage <id>`、`accounts stats <id>` 等只读命令核对
+上游原生 usage。
 
 ## Safety Notes
 

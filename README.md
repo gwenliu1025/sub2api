@@ -27,14 +27,10 @@ are built and published only from this repository.
 
 ### Fork-Specific Additions
 
-- **Kiro-Go Equivalent Cache V2** - Rewrites displayed Anthropic cache usage
-  with an exact allocator while preserving the original upstream token total;
-  streaming requests allocate from Kiro-Go's final usage frame.
-- **Cost-Locked Billing** - Billing remains locked to raw upstream usage even
-  when equivalent-cache display rewriting, fallback, or shadow evaluation is
-  active.
-- **Equivalent-Cache Audit Trail** - Persists raw usage, rewritten usage,
-  policy version, fallback reason, and related audit fields for reconciliation.
+- **Kiro-Go 原生 usage 计费**：Kiro-Go 直接输出标准 Anthropic usage；Sub2API
+  只解析上游原生字段，并按正常模型价格、渠道配置和分组倍率完成计费。
+- **标准缓存价格保护**：Claude 缓存读取、5m 写入和 1h 写入价格保持
+  `0.10x`、`1.25x`、`2.00x` 的官方相对关系。
 - **Fork-Owned Update Source** - The admin update flow follows
   `gwenliu1025/sub2api` releases instead of silently switching back to upstream
   artifacts.
@@ -42,7 +38,7 @@ are built and published only from this repository.
   the exact GHCR image before the application is restarted, with rollback on
   failed activation.
 
-See [Equivalent Cache Billing](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
+See [Kiro-Go 原生 usage 计费说明](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
 [Docker Update](docs/DOCKER_UPDATE.md) for operational details.
 
 ### Release Composition
@@ -53,10 +49,8 @@ See [Equivalent Cache Billing](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
 2. `gwenliu1025/sub2api` 维护的额外定制更新。
 
 重建后的 `v0.1.152` 沿用已经合并的原作者 `v0.1.152` 基线，并继续包含本 Fork 的
-Kiro-Go 等效缓存 V2、原始成本锁定、等效缓存审计持久化、Fork 自有 Release 与
-Docker 更新能力，以及流式最终完整用量分配修复。本次同版本重建将同一会话再次
-创建缓存前的最低读取次数从 4 次调整为 3 次，并将约 10% 已通过保护条件的读取
-候选稳定提升为创建型，适度提高缓存创建事件出现频率。
+自有 Release、Docker 更新能力和原生 Anthropic usage 解析。Kiro-Go 负责生成标准
+usage，Sub2API 不再执行 Equivalent Cache V1/V2 的用量重写或审计分配。
 
 Use this fork's [Releases](https://github.com/gwenliu1025/sub2api/releases) and
 `ghcr.io/gwenliu1025/sub2api:X.Y.Z` images when deploying this version.

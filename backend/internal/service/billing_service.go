@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"strings"
 	"sync"
 	"time"
@@ -825,28 +824,17 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 }
 
 func validateClaudeCachePriceRatios(model string, pricing *LiteLLMModelPricing) error {
-	normalized := strings.ToLower(lastSegment(normalizeModelNameForPricing(model)))
-	if pricing == nil || !strings.HasPrefix(normalized, "claude-") ||
+	if pricing == nil || !isClaudePricingEntry(model, pricing.LiteLLMProvider) ||
 		pricing.InputCostPerToken <= 0 || pricing.CacheCreationInputTokenCostAbove1hr <= 0 {
 		return nil
 	}
-
-	checks := []struct {
-		name     string
-		actual   float64
-		expected float64
-	}{
-		{name: "cache_read_input_token_cost", actual: pricing.CacheReadInputTokenCost, expected: pricing.InputCostPerToken * 0.10},
-		{name: "cache_creation_input_token_cost", actual: pricing.CacheCreationInputTokenCost, expected: pricing.InputCostPerToken * 1.25},
-		{name: "cache_creation_input_token_cost_above_1hr", actual: pricing.CacheCreationInputTokenCostAbove1hr, expected: pricing.InputCostPerToken * 2.00},
-	}
-	for _, check := range checks {
-		tolerance := math.Max(1e-15, math.Abs(check.expected)*1e-9)
-		if math.Abs(check.actual-check.expected) > tolerance {
-			return fmt.Errorf("模型 %s 的 cache 价格 %s 不符合 Anthropic 标准相对倍率", model, check.name)
-		}
-	}
-	return nil
+	return validateClaudeCachePriceRatiosForValues(
+		model,
+		pricing.InputCostPerToken,
+		pricing.CacheReadInputTokenCost,
+		pricing.CacheCreationInputTokenCost,
+		pricing.CacheCreationInputTokenCostAbove1hr,
+	)
 }
 
 // GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值
