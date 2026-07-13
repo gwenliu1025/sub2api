@@ -38,8 +38,7 @@ are built and published only from this repository.
   the exact GHCR image before the application is restarted, with rollback on
   failed activation.
 
-See [Kiro-Go 原生 usage 计费说明](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
-[Docker Update](docs/DOCKER_UPDATE.md) for operational details.
+运维细节请参阅 [Docker Update](docs/DOCKER_UPDATE.md)。
 
 ### Release Composition
 
@@ -49,8 +48,8 @@ See [Kiro-Go 原生 usage 计费说明](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
 2. `gwenliu1025/sub2api` 维护的额外定制更新。
 
 重建后的 `v0.1.152` 沿用已经合并的原作者 `v0.1.152` 基线，并继续包含本 Fork 的
-自有 Release、Docker 更新能力和原生 Anthropic usage 解析。Kiro-Go 负责生成标准
-usage，Sub2API 不再执行 Equivalent Cache V1/V2 的用量重写或审计分配。
+自有 Release、Docker 更新能力和原生 Anthropic usage 解析。Anthropic 高缓存 usage
+由上游兼容服务返回；Sub2API 负责标准字段解析、分模型定价、有效倍率和扣费。
 
 Use this fork's [Releases](https://github.com/gwenliu1025/sub2api/releases) and
 `ghcr.io/gwenliu1025/sub2api:X.Y.Z` images when deploying this version.

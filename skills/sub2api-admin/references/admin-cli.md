@@ -91,17 +91,23 @@ node scripts/sub2api-admin.js accounts batch-clear-error --ids 40,39
 ### Kiro-Go 原生 usage
 
 Kiro-Go 直接生成标准 Anthropic usage，Sub2API 只解析原生 token 字段并按正常模型
-价格、渠道配置和分组倍率计费。排查时使用以下只读命令核对账号与原生用量：
+价格、渠道配置和分组倍率计费。先备份目标账号，再设置 Docker 内网地址并关闭
+账号级 TTL 改写：
 
 ```bash
-node scripts/sub2api-admin.js accounts get <account-id>
-node scripts/sub2api-admin.js accounts usage <account-id>
-node scripts/sub2api-admin.js accounts stats <account-id> --days 30
+node scripts/sub2api-admin.js accounts get "$ACCOUNT_ID"
+node scripts/sub2api-admin.js accounts bulk-update --ids "$ACCOUNT_ID" \
+  --json '{"credentials":{"base_url":"http://kiro-go-pr131:8321"}}'
+node scripts/sub2api-admin.js accounts bulk-update --ids "$ACCOUNT_ID" \
+  --json '{"extra":{"cache_ttl_override_enabled":false}}'
 ```
 
-`equivalent_cache_*` 与 `equivalent_cache_allocation_v2` 已废弃且不再生效。不要通过
-`accounts update` 或 `accounts bulk-update` 写入这些字段，也不要继续执行旧版
-启用、模式切换或回滚流程。
+排查时使用以下只读命令核对原生用量：
+
+```bash
+node scripts/sub2api-admin.js accounts usage "$ACCOUNT_ID"
+node scripts/sub2api-admin.js accounts stats "$ACCOUNT_ID" --days 30
+```
 
 ### 导入
 

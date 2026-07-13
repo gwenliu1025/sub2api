@@ -47,10 +47,17 @@ Kiro-Go 直接生成标准 Anthropic usage。Sub2API 只解析
 `cache_creation_input_tokens` 及 5m/1h 缓存创建明细，并按正常模型价格、
 渠道配置和分组倍率计费。
 
-`equivalent_cache_*` 与 `equivalent_cache_allocation_v2` 已废弃且不再生效。
-不要向账号 `extra` 写入这些字段，也不要尝试启用、切换模式或回滚旧策略。
-排查用量时只使用 `accounts usage <id>`、`accounts stats <id>` 等只读命令核对
-上游原生 usage。
+Kiro 账号使用 Docker 内网地址，并关闭账号级 TTL 改写：
+
+```bash
+node scripts/sub2api-admin.js accounts bulk-update --ids "$ACCOUNT_ID" \
+  --json '{"credentials":{"base_url":"http://kiro-go-pr131:8321"}}'
+node scripts/sub2api-admin.js accounts bulk-update --ids "$ACCOUNT_ID" \
+  --json '{"extra":{"cache_ttl_override_enabled":false}}'
+```
+
+写入前先使用 `accounts get <id>` 备份账号配置。排查用量时只使用
+`accounts usage <id>`、`accounts stats <id>` 等只读命令核对上游原生 usage。
 
 ## Safety Notes
 
