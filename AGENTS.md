@@ -1,39 +1,32 @@
-# Project Rules
+# 项目规则
 
-## Release Ownership
+## 中文产出规则
 
-- `gwenliu1025/sub2api` is the release source for this fork. Upstream changes
-  are merged into this repository first; production artifacts must be built
-  only from this repository.
-- The current release target is `v0.1.151`. Its application version is
-  `0.1.151`, and its only GHCR image tag is
-  `ghcr.io/gwenliu1025/sub2api:0.1.151`.
-- Every future release follows the same exact mapping:
-  `vX.Y.Z` -> `X.Y.Z` -> `ghcr.io/gwenliu1025/sub2api:X.Y.Z`.
-- Do not publish or reference `latest`, major-only, minor-only,
-  architecture-specific, bootstrap, testing, health-test, or other suffix
-  tags.
-- The tag `X.Y.Z` is one multi-platform OCI image for `linux/amd64` and
-  `linux/arm64`. Do not create `-amd64` or `-arm64` aliases.
+- 除非用户在当前请求中明确要求其他语言，本仓库中由 Codex 新建或实质修改的说明性内容均使用简体中文。
+- 适用范围包括 README、设计文档、需求规格、实施计划、变更日志、发布说明、PR/Issue 描述、提交信息、运维记录、镜像描述、构建资产说明、代码注释、配置注释和脚本说明。
+- Docker 镜像及构建资产的人类可读描述使用中文；镜像仓库名、标签、版本号、资产文件名和平台名继续遵循既有技术格式。
+- 不翻译代码标识符、API 字段、命令、路径、环境变量、协议名、标准名、模型名、依赖包名和工具要求的固定字符串。
+- 必须逐字保留的许可证、上游原文、第三方声明和机器解析内容可以保留原语言，但新增说明必须使用中文。
+- 本规则同时适用于主代理和子代理。只有用户当前请求的明确要求或不可变技术约束可以例外。
 
-## Docker Update Contract
+## 发布归属
 
-- A Docker update is eligible only when both the GitHub Release `vX.Y.Z` in
-  `gwenliu1025/sub2api` and the matching GHCR image
-  `ghcr.io/gwenliu1025/sub2api:X.Y.Z` exist.
-- The management panel must keep the two-step interaction:
-  1. Prepare Image pulls and verifies the exact image without interrupting
-     service.
-  2. Restart To Switch recreates only `sub2api`, checks health, and restores
-     the previous exact image if activation fails.
-- Docker Compose files must use `image: ${SUB2API_IMAGE}`. The host updater is
-  the only component allowed to change that value during a management-panel
-  Docker update.
-- The application must never receive Docker socket access. It communicates
-  only with the root-owned updater through the configured Unix socket.
+- `gwenliu1025/sub2api` 是此分支版本的发布源。上游变更必须先合并到本仓库，生产资产只能从本仓库构建。
+- 当前发布目标是 `v0.1.151`，应用版本为 `0.1.151`，唯一 GHCR 镜像标签是 `ghcr.io/gwenliu1025/sub2api:0.1.151`。
+- 后续每个版本必须遵循相同的精确映射：`vX.Y.Z` -> `X.Y.Z` -> `ghcr.io/gwenliu1025/sub2api:X.Y.Z`。
+- 不得发布或引用 `latest`、仅主版本、仅次版本、架构专用、引导、测试、健康检查或其他带后缀的标签。
+- `X.Y.Z` 标签对应一个同时支持 `linux/amd64` 和 `linux/arm64` 的多平台 OCI 镜像，不得创建 `-amd64` 或 `-arm64` 别名。
 
-## Current Scope
+## Docker 更新契约
 
-- Finish and publish `v0.1.151` from this fork.
-- Do not make frontend redesign changes, deploy to any server, change DNS, or
-  migrate machines as part of this release task.
+- 只有当 `gwenliu1025/sub2api` 中的 GitHub Release `vX.Y.Z` 与匹配的 GHCR 镜像 `ghcr.io/gwenliu1025/sub2api:X.Y.Z` 同时存在时，才允许执行 Docker 更新。
+- 管理面板必须保留两步更新交互：
+  1. “准备镜像”只拉取并验证精确版本镜像，不中断服务。
+  2. “重启并切换”只重建 `sub2api`，随后执行健康检查；激活失败时恢复上一个精确版本镜像。
+- Docker Compose 文件必须使用 `image: ${SUB2API_IMAGE}`。通过管理面板执行 Docker 更新时，只有宿主机更新器可以修改该值。
+- 应用容器不得访问 Docker Socket，只能通过已配置的 Unix Socket 与由 root 管理的宿主机更新器通信。
+
+## 当前范围
+
+- 从此分支仓库完成并发布 `v0.1.151`。
+- 本次发布任务不包含前端重新设计、服务器部署、DNS 修改或机器迁移。
