@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Go](https://img.shields.io/badge/Go-1.25.7-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -15,6 +15,45 @@
 [English](README.md) | 中文 | [日本語](README_JA.md)
 
 </div>
+
+## 关于本 Fork
+
+本仓库 [`gwenliu1025/sub2api`](https://github.com/gwenliu1025/sub2api) 是基于
+[`Wei-Shaw/sub2api`](https://github.com/Wei-Shaw/sub2api) 持续维护的生产用途
+fork。仓库会持续合并原作者的正式版本，同时保留本 fork 自己的计费、审计和部署
+能力。本 fork 的 GitHub Release 资产与 Docker 镜像只从本仓库构建和发布。
+
+### Fork 专属能力
+
+- **Kiro-Go 等效缓存 V2**：通过精确分配器重写 Anthropic 缓存用量展示，同时保持
+  上游原始 token 总量不变。
+- **成本锁定计费**：即使启用了等效缓存展示重写、回退或 shadow 评估，最终计费
+  仍锁定到上游原始用量。
+- **等效缓存审计链路**：持久化原始用量、重写后用量、策略版本、回退原因及相关
+  审计字段，便于核账和问题追踪。
+- **Fork 自有更新源**：管理后台在线更新固定跟随 `gwenliu1025/sub2api`，不会在
+  更新时悄悄切回原作者仓库的资产。
+- **Docker 两阶段更新**：由宿主机 root updater 先准备并校验精确版本的 GHCR
+  镜像，再重启应用；激活失败时自动回滚。
+
+运维细节请参阅[等效缓存计费说明](docs/EQUIVALENT_CACHE_BILLING_CN.md)和
+[Docker 更新说明](docs/DOCKER_UPDATE.md)。
+
+### 版本组成
+
+本 fork 发布的每个版本同时包含：
+
+1. 对应版本的 `Wei-Shaw/sub2api` 原作者更新。
+2. `gwenliu1025/sub2api` 维护的额外定制更新。
+
+`v0.1.151` 纳入的原作者更新包括 OpenAI Fast/Flex 用户级规则、Codex 上游身份
+修复、GPT-5.6 计费修正、Grok reasoning effort 转发、图像生成命名空间修复和
+setup-token 自动刷新修复。本 fork 同时加入 Kiro-Go 等效缓存 V2、原始成本锁定、
+等效缓存审计持久化、迁移顺序修正，以及 fork 自有 Release 与 Docker 更新元数据。
+
+部署本版本时，请使用本 fork 的
+[Releases](https://github.com/gwenliu1025/sub2api/releases) 和
+`ghcr.io/gwenliu1025/sub2api:X.Y.Z` 镜像。
 
 
 ## ⚠️ 重要提醒
@@ -198,7 +237,7 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.25.7, Gin, Ent |
+| 后端 | Go 1.26.5, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |

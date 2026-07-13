@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Go](https://img.shields.io/badge/Go-1.25.7-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -15,6 +15,51 @@
 English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 </div>
+
+## About This Fork
+
+This repository, [`gwenliu1025/sub2api`](https://github.com/gwenliu1025/sub2api),
+is a production-oriented fork of
+[`Wei-Shaw/sub2api`](https://github.com/Wei-Shaw/sub2api). It continuously
+integrates upstream releases while carrying fork-specific billing, audit, and
+deployment capabilities. GitHub Release assets and Docker images for this fork
+are built and published only from this repository.
+
+### Fork-Specific Additions
+
+- **Kiro-Go Equivalent Cache V2** - Rewrites displayed Anthropic cache usage
+  with an exact allocator while preserving the original upstream token total.
+- **Cost-Locked Billing** - Billing remains locked to raw upstream usage even
+  when equivalent-cache display rewriting, fallback, or shadow evaluation is
+  active.
+- **Equivalent-Cache Audit Trail** - Persists raw usage, rewritten usage,
+  policy version, fallback reason, and related audit fields for reconciliation.
+- **Fork-Owned Update Source** - The admin update flow follows
+  `gwenliu1025/sub2api` releases instead of silently switching back to upstream
+  artifacts.
+- **Two-Stage Docker Updates** - A root-owned host updater prepares and verifies
+  the exact GHCR image before the application is restarted, with rollback on
+  failed activation.
+
+See [Equivalent Cache Billing](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
+[Docker Update](docs/DOCKER_UPDATE.md) for operational details.
+
+### Release Composition
+
+Every release from this fork contains both:
+
+1. The changes from the matching upstream `Wei-Shaw/sub2api` release.
+2. The additional changes maintained by `gwenliu1025/sub2api`.
+
+For `v0.1.151`, the upstream portion includes OpenAI Fast/Flex user-scoped
+rules, Codex upstream identity fixes, GPT-5.6 billing corrections, Grok
+reasoning-effort forwarding, image-generation namespace fixes, and setup-token
+refresh fixes. The fork portion adds Kiro-Go Equivalent Cache V2, raw-cost
+locking, equivalent-cache audit persistence, migration-order reconciliation,
+and fork-owned release and Docker update metadata.
+
+Use this fork's [Releases](https://github.com/gwenliu1025/sub2api/releases) and
+`ghcr.io/gwenliu1025/sub2api:X.Y.Z` images when deploying this version.
 
 ## ⚠️ Important Notice
 
@@ -194,7 +239,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.25.7, Gin, Ent |
+| Backend | Go 1.26.5, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
