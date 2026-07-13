@@ -366,13 +366,16 @@ usage.cache_creation.ephemeral_1h_input_tokens
 
 SSE 转换器必须按完整事件解析，不能对任意文本行直接替换。
 
-- 从 `message_start` 捕获原始输入侧用量；
-- 在该事件发送给下游前完成输入侧分配；
-- 改写 `message_start.message.usage`；
-- 最终 `message_delta.usage.output_tokens` 保持真实值；
+- `message_start.message.usage` 可能只是 Kiro-Go 的初始估算值，必须原样透传，
+  不能用它提前完成 V2 分配；
+- 从最终 `message_delta.usage` 捕获完整的原始输入和输出用量；
+- 只有当最终 `message_delta.usage` 同时包含有效的整数型 `input_tokens` 和
+  `output_tokens` 时，才执行与非流式响应完全相同的 V2 分配；
+- 改写最终 `message_delta.usage` 中的输入、缓存读取和缓存创建字段；
+- 分配后的 `message_delta.usage.output_tokens` 必须保持真实值；
 - 下游断开后继续读取上游，确保原始用量和计费完整；
-- 如果输入侧用量出现在不支持的事件结构中，则原样透传并记录为分配
-  类型 `0`。
+- 如果最终完整用量缺失、格式无效或上游已经返回真实缓存用量，则原样透传
+  并记录为分配类型 `0`。
 
 返回给计费链路的 `ForwardResult` 必须同时携带不可修改的原始用量和已经
 验证的对外用量。
