@@ -67,6 +67,10 @@ require_absent "$workflow" "simple_release"
 require_absent "$workflow" "SIMPLE_RELEASE"
 require_absent "$workflow" "DockerHub"
 require_absent "$workflow" "sync-version-file"
+require_contains "$workflow" "Sub2API %s 已发布"
+require_contains "$workflow" "拉取镜像：docker pull %s"
+require_contains "$workflow" "发布页面：https://github.com/%s/releases/tag/%s"
+require_absent "$workflow" "Sub2API %s published"
 
 require_contains "$ci_workflow" ".github/scripts/test-validate-release-version.sh"
 require_contains "$ci_workflow" ".github/scripts/test-release-policy.sh"
@@ -77,6 +81,15 @@ require_absent "$goreleaser" "Docker Hub"
 require_absent "$goreleaser" ":latest"
 require_absent "$goreleaser" ":{{ .Version }}-amd64"
 require_absent "$goreleaser" ":{{ .Version }}-arm64"
+require_contains "$goreleaser" "> AI API 网关平台"
+require_contains "$goreleaser" "## Docker 镜像"
+require_contains "$goreleaser" "## 文档"
+require_contains "$goreleaser" "[GitHub 仓库]"
+require_contains "$goreleaser" "[安装指南]"
+require_absent "$goreleaser" "AI API Gateway Platform"
+require_absent "$goreleaser" "## Documentation"
+require_absent "$goreleaser" "[GitHub Repository]"
+require_absent "$goreleaser" "[Installation Guide]"
 
 require_absent_file ".goreleaser.simple.yaml"
 require_absent_file ".github/workflows/bootstrap-image.yml"
@@ -87,6 +100,8 @@ require_absent_file "Dockerfile.goreleaser"
 for path in Dockerfile deploy/Dockerfile deploy/docker-compose.yml; do
   require_absent "$path" "FORCE_UNHEALTHY"
 done
+require_contains "Dockerfile" 'LABEL description="Sub2API - AI API 网关平台"'
+require_absent "Dockerfile" 'LABEL description="Sub2API - AI API Gateway Platform"'
 
 require_exact_line "$env_example" "SUB2API_IMAGE=${image_repository}:${release_version}"
 require_exact_line "$env_example" "UPDATE_REPO=gwenliu1025/sub2api"

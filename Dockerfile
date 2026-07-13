@@ -98,7 +98,7 @@ ARG OCI_SOURCE=https://github.com/gwenliu1025/sub2api
 
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
-LABEL description="Sub2API - AI API Gateway Platform"
+LABEL description="Sub2API - AI API 网关平台"
 LABEL org.opencontainers.image.source="${OCI_SOURCE}"
 LABEL org.opencontainers.image.version="${VERSION}"
 
