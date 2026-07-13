@@ -640,7 +640,7 @@ func TestEquivalentCacheV2Response_NormalNonStreamingOffPreservesRawBeforeLegacy
 	require.Equal(t, UsageAllocationKindNone, result.Kind)
 }
 
-func TestEquivalentCacheV2Response_PassthroughStreamingRewritesMessageStartBeforeWrite(t *testing.T) {
+func TestEquivalentCacheV2Response_PassthroughStreamingUsesFinalMessageDeltaUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -649,10 +649,10 @@ func TestEquivalentCacheV2Response_PassthroughStreamingRewritesMessageStartBefor
 	stream := strings.Join([]string{
 		"event: message_start",
 		"id: event-1",
-		`data: {"type":"message_start","message":{"id":"msg_stream","model":"claude-sonnet-4-6","usage":{"input_tokens":2000,"output_tokens":0,"cached_tokens":0}}}`,
+		`data: {"type":"message_start","message":{"id":"msg_stream","model":"claude-sonnet-4-6","usage":{"input_tokens":4,"output_tokens":0,"cached_tokens":0}}}`,
 		"",
 		"event: message_delta",
-		`data: {"type":"message_delta","usage":{"output_tokens":8000},"delta":{"stop_reason":"end_turn"}}`,
+		`data: {"type":"message_delta","usage":{"input_tokens":4168,"output_tokens":8000},"delta":{"stop_reason":"end_turn"}}`,
 		"",
 		"event: message_stop",
 		`data: {"type":"message_stop"}`,
@@ -682,20 +682,21 @@ func TestEquivalentCacheV2Response_PassthroughStreamingRewritesMessageStartBefor
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}, result.rawUsage)
+	require.Equal(t, ClaudeUsage{InputTokens: 4168, OutputTokens: 8000}, result.rawUsage)
 	require.Equal(t, 8000, result.responseUsage.OutputTokens)
 	require.Equal(t, equivalentCacheV2AlgorithmVersion, result.usageAllocationVersion)
 	require.Equal(t, UsageAllocationKindReadMajor, result.usageAllocationKind)
-	require.Equal(t, equivalentCacheV2AllocationHeaderValue, rec.Header().Get(equivalentCacheV2AllocationHeaderName))
 
 	startData := equivalentCacheV2SSEDataForType(t, rec.Body.String(), "message_start")
-	require.Equal(t, int64(result.responseUsage.InputTokens), gjson.Get(startData, "message.usage.input_tokens").Int())
+	require.Equal(t, int64(4), gjson.Get(startData, "message.usage.input_tokens").Int())
 	require.Equal(t, int64(0), gjson.Get(startData, "message.usage.output_tokens").Int())
 	require.Equal(t, "msg_stream", gjson.Get(startData, "message.id").String())
 	require.Contains(t, rec.Body.String(), "id: event-1")
 
 	deltaData := equivalentCacheV2SSEDataForType(t, rec.Body.String(), "message_delta")
+	require.Equal(t, int64(result.responseUsage.InputTokens), gjson.Get(deltaData, "usage.input_tokens").Int())
 	require.Equal(t, int64(8000), gjson.Get(deltaData, "usage.output_tokens").Int())
+	require.Equal(t, int64(result.responseUsage.CacheReadInputTokens), gjson.Get(deltaData, "usage.cache_read_input_tokens").Int())
 	require.Equal(t, "end_turn", gjson.Get(deltaData, "delta.stop_reason").String())
 }
 
@@ -754,9 +755,9 @@ func TestEquivalentCacheV2Response_PassthroughStreamingWriteFailureStillDrainsFi
 	c.Writer = &failWriteResponseWriter{ResponseWriter: c.Writer}
 
 	stream := strings.Join([]string{
-		`data: {"type":"message_start","message":{"usage":{"input_tokens":2000,"output_tokens":0}}}`,
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":4,"output_tokens":0}}}`,
 		"",
-		`data: {"type":"message_delta","usage":{"output_tokens":8000}}`,
+		`data: {"type":"message_delta","usage":{"input_tokens":4168,"output_tokens":8000}}`,
 		"",
 		"data: [DONE]",
 		"",
@@ -785,12 +786,12 @@ func TestEquivalentCacheV2Response_PassthroughStreamingWriteFailureStillDrainsFi
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.clientDisconnect)
-	require.Equal(t, ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}, result.rawUsage)
+	require.Equal(t, ClaudeUsage{InputTokens: 4168, OutputTokens: 8000}, result.rawUsage)
 	require.Equal(t, 8000, result.responseUsage.OutputTokens)
 	require.Equal(t, equivalentCacheV2AlgorithmVersion, result.usageAllocationVersion)
 }
 
-func TestEquivalentCacheV2Response_NormalStreamingRewritesMessageStartAndKeepsExistingTransforms(t *testing.T) {
+func TestEquivalentCacheV2Response_NormalStreamingUsesFinalMessageDeltaAndKeepsExistingTransforms(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -799,10 +800,10 @@ func TestEquivalentCacheV2Response_NormalStreamingRewritesMessageStartAndKeepsEx
 	stream := strings.Join([]string{
 		"event: message_start",
 		"id: event-normal-1",
-		`data: {"type":"message_start","message":{"id":"msg_normal_stream","model":"mapped-model","usage":{"input_tokens":2000,"output_tokens":0,"cached_tokens":0}}}`,
+		`data: {"type":"message_start","message":{"id":"msg_normal_stream","model":"mapped-model","usage":{"input_tokens":4,"output_tokens":0,"cached_tokens":0}}}`,
 		"",
 		"event: message_delta",
-		`data: {"type":"message_delta","usage":{"output_tokens":8000},"delta":{"stop_reason":"end_turn"}}`,
+		`data: {"type":"message_delta","usage":{"input_tokens":4168,"output_tokens":8000},"delta":{"stop_reason":"end_turn"}}`,
 		"",
 		"event: message_stop",
 		`data: {"type":"message_stop"}`,
@@ -834,21 +835,22 @@ func TestEquivalentCacheV2Response_NormalStreamingRewritesMessageStartAndKeepsEx
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, ClaudeUsage{InputTokens: 2000, OutputTokens: 8000}, result.rawUsage)
+	require.Equal(t, ClaudeUsage{InputTokens: 4168, OutputTokens: 8000}, result.rawUsage)
 	require.Equal(t, 8000, result.responseUsage.OutputTokens)
 	require.Equal(t, result.responseUsage, *result.usage)
 	require.Equal(t, equivalentCacheV2AlgorithmVersion, result.usageAllocationVersion)
 	require.Equal(t, UsageAllocationKindReadMajor, result.usageAllocationKind)
-	require.Equal(t, equivalentCacheV2AllocationHeaderValue, rec.Header().Get(equivalentCacheV2AllocationHeaderName))
 
 	startData := equivalentCacheV2SSEDataForType(t, rec.Body.String(), "message_start")
 	require.Equal(t, "msg_normal_stream", gjson.Get(startData, "message.id").String())
 	require.Equal(t, "original-model", gjson.Get(startData, "message.model").String())
-	require.Equal(t, int64(result.responseUsage.InputTokens), gjson.Get(startData, "message.usage.input_tokens").Int())
+	require.Equal(t, int64(4), gjson.Get(startData, "message.usage.input_tokens").Int())
 	require.Contains(t, rec.Body.String(), "id: event-normal-1")
 
 	deltaData := equivalentCacheV2SSEDataForType(t, rec.Body.String(), "message_delta")
+	require.Equal(t, int64(result.responseUsage.InputTokens), gjson.Get(deltaData, "usage.input_tokens").Int())
 	require.Equal(t, int64(8000), gjson.Get(deltaData, "usage.output_tokens").Int())
+	require.Equal(t, int64(result.responseUsage.CacheReadInputTokens), gjson.Get(deltaData, "usage.cache_read_input_tokens").Int())
 	require.Equal(t, "end_turn", gjson.Get(deltaData, "delta.stop_reason").String())
 }
 
@@ -859,9 +861,9 @@ func TestEquivalentCacheV2Response_NormalStreamingActiveBypassesLegacyTTLOverrid
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 
 	stream := strings.Join([]string{
-		`data: {"type":"message_start","message":{"model":"mapped-model","usage":{"input_tokens":2000,"output_tokens":0}}}`,
+		`data: {"type":"message_start","message":{"model":"mapped-model","usage":{"input_tokens":4,"output_tokens":0}}}`,
 		"",
-		`data: {"type":"message_delta","usage":{"output_tokens":8000}}`,
+		`data: {"type":"message_delta","usage":{"input_tokens":4168,"output_tokens":8000}}`,
 		"",
 		`data: {"type":"message_stop"}`,
 		"",
@@ -908,9 +910,9 @@ func TestEquivalentCacheV2Response_NormalStreamingActiveBypassesLegacyTTLOverrid
 	require.True(t, responseOK)
 	require.Equal(t, rawCost, responseCost)
 
-	startData := equivalentCacheV2SSEDataForType(t, rec.Body.String(), "message_start")
-	require.Equal(t, int64(result.responseUsage.CacheCreation5mTokens), gjson.Get(startData, "message.usage.cache_creation.ephemeral_5m_input_tokens").Int())
-	require.Equal(t, int64(result.responseUsage.CacheCreation1hTokens), gjson.Get(startData, "message.usage.cache_creation.ephemeral_1h_input_tokens").Int())
+	deltaData := equivalentCacheV2SSEDataForType(t, rec.Body.String(), "message_delta")
+	require.Equal(t, int64(result.responseUsage.CacheCreation5mTokens), gjson.Get(deltaData, "usage.cache_creation.ephemeral_5m_input_tokens").Int())
+	require.Equal(t, int64(result.responseUsage.CacheCreation1hTokens), gjson.Get(deltaData, "usage.cache_creation.ephemeral_1h_input_tokens").Int())
 }
 
 func TestEquivalentCacheV2Response_NormalStreamingOffPreservesRawBeforeLegacyTTLOverride(t *testing.T) {

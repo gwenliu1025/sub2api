@@ -561,39 +561,28 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			eventType = gjson.Get(data, "type").String()
 		}
 
-		if !allocationAttempted && eventType == "message_start" {
+		if dataIndex >= 0 {
+			s.parseSSEUsagePassthrough(data, rawUsage)
+		}
+		if !allocationAttempted && eventType == "message_delta" {
 			allocationAttempted = true
 			if plan != nil {
-				allocation := applyEquivalentCacheV2JSON(ctx, []byte(data), "message.usage", *plan)
+				allocation := applyEquivalentCacheV2JSON(ctx, []byte(data), "usage", *plan)
 				if allocation.UsageValid {
 					*rawUsage = cloneClaudeUsage(allocation.RawUsage)
-					*responseUsage = cloneClaudeUsage(allocation.ResponseUsage)
 					if allocation.Allocated {
+						*responseUsage = cloneClaudeUsage(allocation.ResponseUsage)
 						allocationVersion = allocation.Version
 						allocationKind = allocation.Kind
 						outputLines[dataIndex] = "data: " + string(allocation.Body)
-						c.Header(equivalentCacheV2AllocationHeaderName, allocation.HeaderValue())
 					}
-				} else {
-					s.parseSSEUsagePassthrough(data, rawUsage)
-					*responseUsage = cloneClaudeUsage(*rawUsage)
 				}
-			} else {
-				s.parseSSEUsagePassthrough(data, rawUsage)
-				*responseUsage = cloneClaudeUsage(*rawUsage)
 			}
-		} else {
-			if !allocationAttempted && eventType != "" && eventType != "ping" {
-				allocationAttempted = true
-			}
-			if dataIndex >= 0 {
-				s.parseSSEUsagePassthrough(data, rawUsage)
-			}
-			if allocationVersion == 0 {
-				*responseUsage = cloneClaudeUsage(*rawUsage)
-			} else if eventType == "message_delta" {
-				responseUsage.OutputTokens = rawUsage.OutputTokens
-			}
+		}
+		if allocationVersion == 0 {
+			*responseUsage = cloneClaudeUsage(*rawUsage)
+		} else if eventType == "message_delta" {
+			responseUsage.OutputTokens = rawUsage.OutputTokens
 		}
 
 		return strings.Join(outputLines, "\n") + "\n\n"
@@ -683,7 +672,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if clientDisconnected {
 				continue
 			}
-			if len(pendingEventLines) > 0 || (plan != nil && !allocationAttempted) {
+			if len(pendingEventLines) > 0 {
 				resetKeepaliveTimer()
 				continue
 			}

@@ -866,22 +866,20 @@ func (s *GatewayService) handleStreamingResponse(
 		rawDataLine := dataLine
 		s.parseRawSSEUsage(rawDataLine, rawUsage)
 		rawEventType := gjson.Get(rawDataLine, "type").String()
-		if !allocationAttempted && rawEventType == "message_start" {
+		if !allocationAttempted && rawEventType == "message_delta" {
 			allocationAttempted = true
 			if responsePlan != nil {
-				allocation := applyEquivalentCacheV2JSON(ctx, []byte(rawDataLine), "message.usage", *responsePlan)
+				allocation := applyEquivalentCacheV2JSON(ctx, []byte(rawDataLine), "usage", *responsePlan)
 				if allocation.UsageValid {
 					*rawUsage = cloneClaudeUsage(allocation.RawUsage)
 					if allocation.Allocated {
 						dataLine = string(allocation.Body)
+						*usage = cloneClaudeUsage(allocation.ResponseUsage)
 						allocationVersion = allocation.Version
 						allocationKind = allocation.Kind
-						c.Header(equivalentCacheV2AllocationHeaderName, allocation.HeaderValue())
 					}
 				}
 			}
-		} else if !allocationAttempted && rawEventType != "" && rawEventType != "ping" {
-			allocationAttempted = true
 		}
 
 		var event map[string]any
@@ -1115,7 +1113,7 @@ func (s *GatewayService) handleStreamingResponse(
 			if clientDisconnected {
 				continue
 			}
-			if len(pendingEventLines) > 0 || (responsePlan != nil && !allocationAttempted) {
+			if len(pendingEventLines) > 0 {
 				resetKeepaliveTimer()
 				continue
 			}
