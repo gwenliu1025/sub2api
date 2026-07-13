@@ -248,11 +248,3 @@ func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 func f64Ptr(value float64) *float64 {
 	return &value
 }
-
-func intPtr(value int) *int {
-	return &value
-}
-
-func int16Ptr(value int16) *int16 {
-	return &value
-}

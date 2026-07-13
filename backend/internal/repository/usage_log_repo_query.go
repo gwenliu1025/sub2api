@@ -670,29 +670,6 @@ func nullInt(v *int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(*v), Valid: true}
 }
 
-func nullInt16(v *int16) sql.NullInt16 {
-	if v == nil {
-		return sql.NullInt16{}
-	}
-	return sql.NullInt16{Int16: *v, Valid: true}
-}
-
-func nullIntPtr(v sql.NullInt64) *int {
-	if !v.Valid {
-		return nil
-	}
-	out := int(v.Int64)
-	return &out
-}
-
-func nullInt16Ptr(v sql.NullInt16) *int16 {
-	if !v.Valid {
-		return nil
-	}
-	out := v.Int16
-	return &out
-}
-
 func nullFloat64Ptr(v sql.NullFloat64) *float64 {
 	if !v.Valid {
 		return nil

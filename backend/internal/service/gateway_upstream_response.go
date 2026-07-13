@@ -1115,22 +1115,6 @@ func (s *GatewayService) parseSSEUsage(data string, usage *ClaudeUsage) {
 	}
 }
 
-func (s *GatewayService) parseRawSSEUsage(data string, usage *ClaudeUsage) {
-	if usage == nil {
-		return
-	}
-
-	var event map[string]any
-	if err := json.Unmarshal([]byte(data), &event); err != nil {
-		return
-	}
-
-	reconcileCachedTokensInSSEEvent(event)
-	if patch := s.extractSSEUsagePatch(event); patch != nil {
-		mergeSSEUsagePatch(usage, patch)
-	}
-}
-
 func reconcileCachedTokensInSSEEvent(event map[string]any) bool {
 	eventType, _ := event["type"].(string)
 	switch eventType {
