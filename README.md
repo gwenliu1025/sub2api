@@ -28,7 +28,8 @@ are built and published only from this repository.
 ### Fork-Specific Additions
 
 - **Kiro-Go Equivalent Cache V2** - Rewrites displayed Anthropic cache usage
-  with an exact allocator while preserving the original upstream token total.
+  with an exact allocator while preserving the original upstream token total;
+  streaming requests allocate from Kiro-Go's final usage frame.
 - **Cost-Locked Billing** - Billing remains locked to raw upstream usage even
   when equivalent-cache display rewriting, fallback, or shadow evaluation is
   active.
@@ -51,12 +52,13 @@ Every release from this fork contains both:
 1. The changes from the matching upstream `Wei-Shaw/sub2api` release.
 2. The additional changes maintained by `gwenliu1025/sub2api`.
 
-For `v0.1.151`, the upstream portion includes OpenAI Fast/Flex user-scoped
-rules, Codex upstream identity fixes, GPT-5.6 billing corrections, Grok
-reasoning-effort forwarding, image-generation namespace fixes, and setup-token
-refresh fixes. The fork portion adds Kiro-Go Equivalent Cache V2, raw-cost
-locking, equivalent-cache audit persistence, migration-order reconciliation,
-and fork-owned release and Docker update metadata.
+For `v0.1.152`, the upstream portion adds xAI API Key accounts, Grok OAuth
+prompt caching, Codex alpha/search forwarding with per-call billing, richer
+tool bridging, and fixes for Codex identity, remote compaction, compact
+keepalives, and Anthropic cache-creation usage. The fork portion adds Kiro-Go
+Equivalent Cache V2, raw-cost locking, equivalent-cache audit persistence,
+fork-owned release and Docker update metadata, and the streaming final-usage
+fix that keeps streaming and non-streaming allocation behavior consistent.
 
 Use this fork's [Releases](https://github.com/gwenliu1025/sub2api/releases) and
 `ghcr.io/gwenliu1025/sub2api:X.Y.Z` images when deploying this version.
