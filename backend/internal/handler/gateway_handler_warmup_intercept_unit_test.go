@@ -188,7 +188,6 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 		nil, // claudeTokenProvider
 		nil, // sessionLimitCache
 		nil, // rpmCache
-		nil, // equivalentCacheV2StateStore
 		nil, // digestStore
 		nil, // settingService
 		nil, // tlsFPProfileService
@@ -476,7 +475,7 @@ func TestGatewayHandlerMessages_FallbackRetryUsesFallbackGroupIDInParsedRequest(
 	cfg := &config.Config{RunMode: config.RunModeSimple}
 	gatewayService := service.NewGatewayService(
 		nil, groupRepo, nil, nil, nil, nil, nil, nil, cfg, schedulerSnapshot,
-		nil, nil, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil,
 	)
 	billingCacheService := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)

@@ -47,7 +47,7 @@ func TestHandleNonStreamingResponse_NonJSON2xxTriggersFailover(t *testing.T) {
 		rateLimitService: &RateLimitService{},
 	}
 
-	result, err := svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, "claude-sonnet-4-6", "claude-sonnet-4-6", nil)
+	result, err := svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, "claude-sonnet-4-6", "claude-sonnet-4-6")
 
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
@@ -75,12 +75,12 @@ func TestHandleNonStreamingResponse_ValidJSONUnchanged(t *testing.T) {
 		rateLimitService: &RateLimitService{},
 	}
 
-	result, err := svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, "claude-sonnet-4-6", "claude-sonnet-4-6", nil)
+	result, err := svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, "claude-sonnet-4-6", "claude-sonnet-4-6")
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, 12, result.ResponseUsage.InputTokens)
-	require.Equal(t, 7, result.ResponseUsage.OutputTokens)
+	require.Equal(t, 12, result.InputTokens)
+	require.Equal(t, 7, result.OutputTokens)
 	require.JSONEq(t, string(body), rec.Body.String())
 }
 
@@ -98,7 +98,7 @@ func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_NonJSON2xxTriggers
 	}
 	svc := &GatewayService{cfg: &config.Config{}}
 
-	result, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2}, nil)
+	result, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2})
 
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
@@ -122,12 +122,12 @@ func TestHandleNonStreamingResponseAnthropicAPIKeyPassthrough_ValidJSONUnchanged
 	}
 	svc := &GatewayService{cfg: &config.Config{}}
 
-	result, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2}, nil)
+	result, err := svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 2})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, 5, result.ResponseUsage.InputTokens)
-	require.Equal(t, 3, result.ResponseUsage.OutputTokens)
+	require.Equal(t, 5, result.InputTokens)
+	require.Equal(t, 3, result.OutputTokens)
 	require.JSONEq(t, string(body), rec.Body.String())
 }
 
@@ -165,7 +165,7 @@ func TestHandleNonStreamingResponse_NonJSON2xxMatchesTempUnschedulableRule(t *te
 		Body:       io.NopCloser(bytes.NewReader(body)),
 	}
 
-	_, err := svc.handleNonStreamingResponse(context.Background(), resp, c, account, "claude-sonnet-4-6", "claude-sonnet-4-6", nil)
+	_, err := svc.handleNonStreamingResponse(context.Background(), resp, c, account, "claude-sonnet-4-6", "claude-sonnet-4-6")
 
 	var failoverErr *UpstreamFailoverError
 	require.True(t, errors.As(err, &failoverErr))

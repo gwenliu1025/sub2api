@@ -640,13 +640,9 @@ func (s *GatewayService) handleRetryExhaustedError(ctx context.Context, resp *ht
 
 // streamingResult 流式响应结果
 type streamingResult struct {
-	usage                  *ClaudeUsage
-	rawUsage               ClaudeUsage
-	responseUsage          ClaudeUsage
-	usageAllocationVersion int16
-	usageAllocationKind    UsageAllocationKind
-	firstTokenMs           *int
-	clientDisconnect       bool // 客户端是否在流式传输过程中断开
+	usage            *ClaudeUsage
+	firstTokenMs     *int
+	clientDisconnect bool // 客户端是否在流式传输过程中断开
 }
 
 func (s *GatewayService) handleStreamingResponse(
@@ -658,7 +654,6 @@ func (s *GatewayService) handleStreamingResponse(
 	originalModel,
 	mappedModel string,
 	mimicClaudeCode bool,
-	plans ...*equivalentCacheV2ResponsePlan,
 ) (*streamingResult, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
@@ -684,16 +679,7 @@ func (s *GatewayService) handleStreamingResponse(
 		return nil, errors.New("streaming not supported")
 	}
 
-	var responsePlan *equivalentCacheV2ResponsePlan
-	if len(plans) > 0 {
-		responsePlan = plans[0]
-	}
-
 	usage := &ClaudeUsage{}
-	rawUsage := &ClaudeUsage{}
-	allocationAttempted := false
-	allocationVersion := int16(0)
-	allocationKind := UsageAllocationKindNone
 	var firstTokenMs *int
 	scanner := bufio.NewScanner(resp.Body)
 	// 设置更大的buffer以处理长行
@@ -811,16 +797,11 @@ func (s *GatewayService) handleStreamingResponse(
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
 	sawTerminalEvent := false
 	resultWithUsage := func(disconnected bool) *streamingResult {
-		response := cloneClaudeUsage(*usage)
-		raw := cloneClaudeUsage(*rawUsage)
+		response := *usage
 		return &streamingResult{
-			usage:                  &response,
-			rawUsage:               raw,
-			responseUsage:          response,
-			usageAllocationVersion: allocationVersion,
-			usageAllocationKind:    allocationKind,
-			firstTokenMs:           firstTokenMs,
-			clientDisconnect:       disconnected,
+			usage:            &response,
+			firstTokenMs:     firstTokenMs,
+			clientDisconnect: disconnected,
 		}
 	}
 	useNoopDeltaKeepalive := c != nil && c.Request != nil && shouldUseClaudeCodeNoopDeltaKeepalive(c.GetHeader("User-Agent"))
@@ -863,25 +844,6 @@ func (s *GatewayService) handleStreamingResponse(
 			return []string{strings.Join(outputLines, "\n") + "\n\n"}, dataLine, nil, nil
 		}
 
-		rawDataLine := dataLine
-		s.parseRawSSEUsage(rawDataLine, rawUsage)
-		rawEventType := gjson.Get(rawDataLine, "type").String()
-		if !allocationAttempted && rawEventType == "message_delta" {
-			allocationAttempted = true
-			if responsePlan != nil {
-				allocation := applyEquivalentCacheV2JSON(ctx, []byte(rawDataLine), "usage", *responsePlan)
-				if allocation.UsageValid {
-					*rawUsage = cloneClaudeUsage(allocation.RawUsage)
-					if allocation.Allocated {
-						dataLine = string(allocation.Body)
-						*usage = cloneClaudeUsage(allocation.ResponseUsage)
-						allocationVersion = allocation.Version
-						allocationKind = allocation.Kind
-					}
-				}
-			}
-		}
-
 		var event map[string]any
 		if err := json.Unmarshal([]byte(dataLine), &event); err != nil {
 			// JSON 解析失败，直接透传原始数据
@@ -892,7 +854,7 @@ func (s *GatewayService) handleStreamingResponse(
 		if eventName == "" {
 			eventName = eventType
 		}
-		eventChanged := dataLine != rawDataLine
+		eventChanged := false
 
 		if useNoopDeltaKeepalive {
 			switch eventType {
@@ -934,19 +896,17 @@ func (s *GatewayService) handleStreamingResponse(
 
 		// Cache TTL Override: 重写 SSE 事件中的 cache_creation 分类。
 		// 账号级设置优先；全局 1h 请求注入开启时，默认把 usage 计费归回 5m。
-		if responsePlan == nil {
-			if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
-				if eventType == "message_start" {
-					if msg, ok := event["message"].(map[string]any); ok {
-						if u, ok := msg["usage"].(map[string]any); ok {
-							eventChanged = rewriteCacheCreationJSON(u, overrideTarget) || eventChanged
-						}
-					}
-				}
-				if eventType == "message_delta" {
-					if u, ok := event["usage"].(map[string]any); ok {
+		if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
+			if eventType == "message_start" {
+				if msg, ok := event["message"].(map[string]any); ok {
+					if u, ok := msg["usage"].(map[string]any); ok {
 						eventChanged = rewriteCacheCreationJSON(u, overrideTarget) || eventChanged
 					}
+				}
+			}
+			if eventType == "message_delta" {
+				if u, ok := event["usage"].(map[string]any); ok {
+					eventChanged = rewriteCacheCreationJSON(u, overrideTarget) || eventChanged
 				}
 			}
 		}
@@ -1410,8 +1370,7 @@ func (s *GatewayService) handleNonStreamingResponse(
 	account *Account,
 	originalModel,
 	mappedModel string,
-	plan *equivalentCacheV2ResponsePlan,
-) (*equivalentCacheV2ResponseResult, error) {
+) (*ClaudeUsage, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 
@@ -1449,20 +1408,16 @@ func (s *GatewayService) handleNonStreamingResponse(
 			}
 		}
 	}
-	rawUsage := cloneClaudeUsage(response.Usage)
-
 	// Cache TTL Override: 重写 non-streaming 响应中的 cache_creation 分类。
 	// 账号级设置优先；全局 1h 请求注入开启时，默认把 usage 计费归回 5m。
-	if plan == nil {
-		if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
-			if applyCacheTTLOverride(&response.Usage, overrideTarget) {
-				// 同步更新 body JSON 中的嵌套 cache_creation 对象
-				if newBody, err := sjson.SetBytes(body, "usage.cache_creation.ephemeral_5m_input_tokens", response.Usage.CacheCreation5mTokens); err == nil {
-					body = newBody
-				}
-				if newBody, err := sjson.SetBytes(body, "usage.cache_creation.ephemeral_1h_input_tokens", response.Usage.CacheCreation1hTokens); err == nil {
-					body = newBody
-				}
+	if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
+		if applyCacheTTLOverride(&response.Usage, overrideTarget) {
+			// 同步更新 body JSON 中的嵌套 cache_creation 对象
+			if newBody, err := sjson.SetBytes(body, "usage.cache_creation.ephemeral_5m_input_tokens", response.Usage.CacheCreation5mTokens); err == nil {
+				body = newBody
+			}
+			if newBody, err := sjson.SetBytes(body, "usage.cache_creation.ephemeral_1h_input_tokens", response.Usage.CacheCreation1hTokens); err == nil {
+				body = newBody
 			}
 		}
 	}
@@ -1472,20 +1427,7 @@ func (s *GatewayService) handleNonStreamingResponse(
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
 
-	result := equivalentCacheV2RawResponseResult(body, response.Usage, true)
-	result.RawUsage = cloneClaudeUsage(rawUsage)
-	if plan != nil {
-		result = applyEquivalentCacheV2JSON(ctx, body, "usage", *plan)
-		if !result.UsageValid {
-			result = equivalentCacheV2RawResponseResult(body, rawUsage, true)
-		}
-		body = result.Body
-	}
-
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	if headerValue := result.HeaderValue(); headerValue != "" {
-		c.Header(equivalentCacheV2AllocationHeaderName, headerValue)
-	}
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -1495,12 +1437,11 @@ func (s *GatewayService) handleNonStreamingResponse(
 	}
 
 	body = reverseToolNamesIfPresent(c, body)
-	result.Body = body
 
 	// 写入响应
 	c.Data(resp.StatusCode, contentType, body)
 
-	return &result, nil
+	return &response.Usage, nil
 }
 
 // replaceModelInResponseBody 替换响应体中的model字段

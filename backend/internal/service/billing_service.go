@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -780,6 +781,9 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 			litellmPricing = nil
 		}
 		if litellmPricing != nil {
+			if err := validateClaudeCachePriceRatios(model, litellmPricing); err != nil {
+				return nil, err
+			}
 			// 启用 5m/1h 分类计费的条件：
 			// 1. 存在 1h 价格
 			// 2. 1h 价格 > 5m 价格（防止 LiteLLM 数据错误导致少收费）
@@ -818,6 +822,31 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 	}
 
 	return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
+}
+
+func validateClaudeCachePriceRatios(model string, pricing *LiteLLMModelPricing) error {
+	normalized := strings.ToLower(lastSegment(normalizeModelNameForPricing(model)))
+	if pricing == nil || !strings.HasPrefix(normalized, "claude-") ||
+		pricing.InputCostPerToken <= 0 || pricing.CacheCreationInputTokenCostAbove1hr <= 0 {
+		return nil
+	}
+
+	checks := []struct {
+		name     string
+		actual   float64
+		expected float64
+	}{
+		{name: "cache_read_input_token_cost", actual: pricing.CacheReadInputTokenCost, expected: pricing.InputCostPerToken * 0.10},
+		{name: "cache_creation_input_token_cost", actual: pricing.CacheCreationInputTokenCost, expected: pricing.InputCostPerToken * 1.25},
+		{name: "cache_creation_input_token_cost_above_1hr", actual: pricing.CacheCreationInputTokenCostAbove1hr, expected: pricing.InputCostPerToken * 2.00},
+	}
+	for _, check := range checks {
+		tolerance := math.Max(1e-15, math.Abs(check.expected)*1e-9)
+		if math.Abs(check.actual-check.expected) > tolerance {
+			return fmt.Errorf("模型 %s 的 cache 价格 %s 不符合 Anthropic 标准相对倍率", model, check.name)
+		}
+	}
+	return nil
 }
 
 // GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值

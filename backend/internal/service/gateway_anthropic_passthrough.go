@@ -259,54 +259,36 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		return s.handleErrorResponse(ctx, resp, c, account, input.RequestModel)
 	}
 
-	var responseResult *equivalentCacheV2ResponseResult
+	var usage *ClaudeUsage
 	var firstTokenMs *int
 	var clientDisconnect bool
-	responsePlan := s.prepareEquivalentCacheV2ResponsePlan(
-		ctx,
-		account,
-		input.Parsed,
-		input.OriginalModel,
-		resp.Header.Get("x-request-id"),
-	)
 	if input.RequestStream {
-		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel, responsePlan)
+		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
 		if err != nil {
 			return nil, err
 		}
-		responseResult = &equivalentCacheV2ResponseResult{
-			RawUsage:      cloneClaudeUsage(streamResult.rawUsage),
-			ResponseUsage: cloneClaudeUsage(streamResult.responseUsage),
-			Version:       streamResult.usageAllocationVersion,
-			Kind:          streamResult.usageAllocationKind,
-			Allocated:     streamResult.usageAllocationVersion == equivalentCacheV2AlgorithmVersion,
-			UsageValid:    true,
-		}
+		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
 	} else {
-		responseResult, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, responsePlan)
+		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if responseResult == nil {
-		responseResult = &equivalentCacheV2ResponseResult{}
+	if usage == nil {
+		usage = &ClaudeUsage{}
 	}
 
 	return &ForwardResult{
-		RequestID:              resp.Header.Get("x-request-id"),
-		Usage:                  cloneClaudeUsage(responseResult.ResponseUsage),
-		RawUsage:               cloneClaudeUsage(responseResult.RawUsage),
-		ResponseUsage:          cloneClaudeUsage(responseResult.ResponseUsage),
-		UsageAllocationVersion: responseResult.Version,
-		UsageAllocationKind:    responseResult.Kind,
-		Model:                  input.OriginalModel,
-		UpstreamModel:          input.RequestModel,
-		Stream:                 input.RequestStream,
-		Duration:               time.Since(input.StartTime),
-		FirstTokenMs:           firstTokenMs,
-		ClientDisconnect:       clientDisconnect,
+		RequestID:        resp.Header.Get("x-request-id"),
+		Usage:            *usage,
+		Model:            input.OriginalModel,
+		UpstreamModel:    input.RequestModel,
+		Stream:           input.RequestStream,
+		Duration:         time.Since(input.StartTime),
+		FirstTokenMs:     firstTokenMs,
+		ClientDisconnect: clientDisconnect,
 	}, nil
 }
 
@@ -387,7 +369,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	account *Account,
 	startTime time.Time,
 	model string,
-	plans ...*equivalentCacheV2ResponsePlan,
 ) (*streamingResult, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
@@ -417,30 +398,16 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		return nil, errors.New("streaming not supported")
 	}
 
-	var plan *equivalentCacheV2ResponsePlan
-	if len(plans) > 0 {
-		plan = plans[0]
-	}
-
-	rawUsage := &ClaudeUsage{}
-	responseUsage := &ClaudeUsage{}
-	allocationAttempted := false
-	allocationVersion := int16(0)
-	allocationKind := UsageAllocationKindNone
+	usage := &ClaudeUsage{}
 	var firstTokenMs *int
 	clientDisconnected := false
 	sawTerminalEvent := false
 	resultWithUsage := func(disconnected bool) *streamingResult {
-		raw := cloneClaudeUsage(*rawUsage)
-		response := cloneClaudeUsage(*responseUsage)
+		collected := *usage
 		return &streamingResult{
-			usage:                  &response,
-			rawUsage:               raw,
-			responseUsage:          response,
-			usageAllocationVersion: allocationVersion,
-			usageAllocationKind:    allocationKind,
-			firstTokenMs:           firstTokenMs,
-			clientDisconnect:       disconnected,
+			usage:            &collected,
+			firstTokenMs:     firstTokenMs,
+			clientDisconnect: disconnected,
 		}
 	}
 
@@ -556,33 +523,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			firstTokenMs = &ms
 		}
 
-		eventType := ""
-		if dataIndex >= 0 && gjson.Valid(data) {
-			eventType = gjson.Get(data, "type").String()
-		}
-
 		if dataIndex >= 0 {
-			s.parseSSEUsagePassthrough(data, rawUsage)
-		}
-		if !allocationAttempted && eventType == "message_delta" {
-			allocationAttempted = true
-			if plan != nil {
-				allocation := applyEquivalentCacheV2JSON(ctx, []byte(data), "usage", *plan)
-				if allocation.UsageValid {
-					*rawUsage = cloneClaudeUsage(allocation.RawUsage)
-					if allocation.Allocated {
-						*responseUsage = cloneClaudeUsage(allocation.ResponseUsage)
-						allocationVersion = allocation.Version
-						allocationKind = allocation.Kind
-						outputLines[dataIndex] = "data: " + string(allocation.Body)
-					}
-				}
-			}
-		}
-		if allocationVersion == 0 {
-			*responseUsage = cloneClaudeUsage(*rawUsage)
-		} else if eventType == "message_delta" {
-			responseUsage.OutputTokens = rawUsage.OutputTokens
+			s.parseSSEUsagePassthrough(data, usage)
 		}
 
 		return strings.Join(outputLines, "\n") + "\n\n"
@@ -712,7 +654,8 @@ func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsag
 	}
 
 	parsed := gjson.Parse(data)
-	switch parsed.Get("type").String() {
+	eventType := parsed.Get("type").String()
+	switch eventType {
 	case "message_start":
 		msgUsage := parsed.Get("message.usage")
 		if msgUsage.Exists() {
@@ -731,31 +674,31 @@ func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsag
 	case "message_delta":
 		deltaUsage := parsed.Get("usage")
 		if deltaUsage.Exists() {
-			if v := deltaUsage.Get("input_tokens").Int(); v > 0 {
-				usage.InputTokens = int(v)
+			if v := deltaUsage.Get("input_tokens"); v.Exists() {
+				usage.InputTokens = int(v.Int())
 			}
-			if v := deltaUsage.Get("output_tokens").Int(); v > 0 {
-				usage.OutputTokens = int(v)
+			if v := deltaUsage.Get("output_tokens"); v.Exists() {
+				usage.OutputTokens = int(v.Int())
 			}
-			if v := deltaUsage.Get("cache_creation_input_tokens").Int(); v > 0 {
-				usage.CacheCreationInputTokens = int(v)
+			if v := deltaUsage.Get("cache_creation_input_tokens"); v.Exists() {
+				usage.CacheCreationInputTokens = int(v.Int())
 			}
-			if v := deltaUsage.Get("cache_read_input_tokens").Int(); v > 0 {
-				usage.CacheReadInputTokens = int(v)
+			if v := deltaUsage.Get("cache_read_input_tokens"); v.Exists() {
+				usage.CacheReadInputTokens = int(v.Int())
 			}
 
 			cc5m := deltaUsage.Get("cache_creation.ephemeral_5m_input_tokens")
 			cc1h := deltaUsage.Get("cache_creation.ephemeral_1h_input_tokens")
-			if cc5m.Exists() && cc5m.Int() > 0 {
+			if cc5m.Exists() || cc1h.Exists() {
 				usage.CacheCreation5mTokens = int(cc5m.Int())
-			}
-			if cc1h.Exists() && cc1h.Int() > 0 {
 				usage.CacheCreation1hTokens = int(cc1h.Int())
 			}
 		}
 	}
 
-	if usage.CacheReadInputTokens == 0 {
+	hasFinalStandardCacheRead := eventType == "message_delta" &&
+		parsed.Get("usage.cache_read_input_tokens").Exists()
+	if usage.CacheReadInputTokens == 0 && !hasFinalStandardCacheRead {
 		if cached := parsed.Get("message.usage.cached_tokens").Int(); cached > 0 {
 			usage.CacheReadInputTokens = int(cached)
 		}
@@ -861,8 +804,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
-	plan *equivalentCacheV2ResponsePlan,
-) (*equivalentCacheV2ResponseResult, error) {
+) (*ClaudeUsage, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}
@@ -879,28 +821,16 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		}
 	}
 
-	legacyUsage := parseClaudeUsageFromResponseBody(body)
-	result := equivalentCacheV2RawResponseResult(body, *legacyUsage, true)
-	if plan != nil {
-		result = applyEquivalentCacheV2JSON(ctx, body, "usage", *plan)
-		if !result.UsageValid {
-			result = equivalentCacheV2RawResponseResult(body, *legacyUsage, true)
-		}
-		body = result.Body
-	}
+	usage := parseClaudeUsageFromResponseBody(body)
 
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	if headerValue := result.HeaderValue(); headerValue != "" {
-		c.Header(equivalentCacheV2AllocationHeaderName, headerValue)
-	}
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "application/json"
 	}
 	body = reverseToolNamesIfPresent(c, body)
-	result.Body = body
 	c.Data(resp.StatusCode, contentType, body)
-	return &result, nil
+	return usage, nil
 }
 
 func writeAnthropicPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {

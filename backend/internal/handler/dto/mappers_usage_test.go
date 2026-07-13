@@ -221,69 +221,6 @@ func TestUsageLogFromService_IncludesImageBillingMetadataForUserAndAdmin(t *test
 	}
 }
 
-func TestUsageLogFromServiceAdmin_MapsRawUsageAuditFields(t *testing.T) {
-	t.Parallel()
-
-	log := &service.UsageLog{
-		RequestID:                "req_raw_usage_audit",
-		Model:                    "claude-sonnet-4",
-		RawInputTokens:           intPtr(101),
-		RawOutputTokens:          intPtr(202),
-		RawCacheReadTokens:       intPtr(303),
-		RawCacheCreationTokens:   intPtr(404),
-		RawCacheCreation5mTokens: intPtr(505),
-		RawCacheCreation1hTokens: intPtr(606),
-		UsageAllocationVersion:   int16Ptr(2),
-		UsageAllocationKind:      int16Ptr(3),
-	}
-
-	adminDTO := UsageLogFromServiceAdmin(log)
-
-	require.Equal(t, log.RawInputTokens, adminDTO.RawInputTokens)
-	require.Equal(t, log.RawOutputTokens, adminDTO.RawOutputTokens)
-	require.Equal(t, log.RawCacheReadTokens, adminDTO.RawCacheReadTokens)
-	require.Equal(t, log.RawCacheCreationTokens, adminDTO.RawCacheCreationTokens)
-	require.Equal(t, log.RawCacheCreation5mTokens, adminDTO.RawCacheCreation5mTokens)
-	require.Equal(t, log.RawCacheCreation1hTokens, adminDTO.RawCacheCreation1hTokens)
-	require.Equal(t, log.UsageAllocationVersion, adminDTO.UsageAllocationVersion)
-	require.Equal(t, log.UsageAllocationKind, adminDTO.UsageAllocationKind)
-}
-
-func TestUsageLogFromService_UserJSONOmitsRawUsageAuditFields(t *testing.T) {
-	t.Parallel()
-
-	log := &service.UsageLog{
-		RequestID:                "req_user_raw_usage_audit",
-		Model:                    "claude-sonnet-4",
-		RawInputTokens:           intPtr(101),
-		RawOutputTokens:          intPtr(202),
-		RawCacheReadTokens:       intPtr(303),
-		RawCacheCreationTokens:   intPtr(404),
-		RawCacheCreation5mTokens: intPtr(505),
-		RawCacheCreation1hTokens: intPtr(606),
-		UsageAllocationVersion:   int16Ptr(2),
-		UsageAllocationKind:      int16Ptr(3),
-	}
-
-	userJSON, err := json.Marshal(UsageLogFromService(log))
-	require.NoError(t, err)
-
-	var payload map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(userJSON, &payload))
-	for _, field := range []string{
-		"raw_input_tokens",
-		"raw_output_tokens",
-		"raw_cache_read_tokens",
-		"raw_cache_creation_tokens",
-		"raw_cache_creation_5m_tokens",
-		"raw_cache_creation_1h_tokens",
-		"usage_allocation_version",
-		"usage_allocation_kind",
-	} {
-		require.NotContains(t, payload, field)
-	}
-}
-
 func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 	t.Parallel()
 

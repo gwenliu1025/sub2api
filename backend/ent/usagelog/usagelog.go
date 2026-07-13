@@ -52,22 +52,6 @@ const (
 	FieldCacheCreation5mTokens = "cache_creation_5m_tokens"
 	// FieldCacheCreation1hTokens holds the string denoting the cache_creation_1h_tokens field in the database.
 	FieldCacheCreation1hTokens = "cache_creation_1h_tokens"
-	// FieldRawInputTokens holds the string denoting the raw_input_tokens field in the database.
-	FieldRawInputTokens = "raw_input_tokens"
-	// FieldRawOutputTokens holds the string denoting the raw_output_tokens field in the database.
-	FieldRawOutputTokens = "raw_output_tokens"
-	// FieldRawCacheReadTokens holds the string denoting the raw_cache_read_tokens field in the database.
-	FieldRawCacheReadTokens = "raw_cache_read_tokens"
-	// FieldRawCacheCreationTokens holds the string denoting the raw_cache_creation_tokens field in the database.
-	FieldRawCacheCreationTokens = "raw_cache_creation_tokens"
-	// FieldRawCacheCreation5mTokens holds the string denoting the raw_cache_creation_5m_tokens field in the database.
-	FieldRawCacheCreation5mTokens = "raw_cache_creation_5m_tokens"
-	// FieldRawCacheCreation1hTokens holds the string denoting the raw_cache_creation_1h_tokens field in the database.
-	FieldRawCacheCreation1hTokens = "raw_cache_creation_1h_tokens"
-	// FieldUsageAllocationVersion holds the string denoting the usage_allocation_version field in the database.
-	FieldUsageAllocationVersion = "usage_allocation_version"
-	// FieldUsageAllocationKind holds the string denoting the usage_allocation_kind field in the database.
-	FieldUsageAllocationKind = "usage_allocation_kind"
 	// FieldInputCost holds the string denoting the input_cost field in the database.
 	FieldInputCost = "input_cost"
 	// FieldOutputCost holds the string denoting the output_cost field in the database.
@@ -189,14 +173,6 @@ var Columns = []string{
 	FieldCacheReadTokens,
 	FieldCacheCreation5mTokens,
 	FieldCacheCreation1hTokens,
-	FieldRawInputTokens,
-	FieldRawOutputTokens,
-	FieldRawCacheReadTokens,
-	FieldRawCacheCreationTokens,
-	FieldRawCacheCreation5mTokens,
-	FieldRawCacheCreation1hTokens,
-	FieldUsageAllocationVersion,
-	FieldUsageAllocationKind,
 	FieldInputCost,
 	FieldOutputCost,
 	FieldCacheCreationCost,
@@ -404,46 +380,6 @@ func ByCacheCreation5mTokens(opts ...sql.OrderTermOption) OrderOption {
 // ByCacheCreation1hTokens orders the results by the cache_creation_1h_tokens field.
 func ByCacheCreation1hTokens(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCacheCreation1hTokens, opts...).ToFunc()
-}
-
-// ByRawInputTokens orders the results by the raw_input_tokens field.
-func ByRawInputTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRawInputTokens, opts...).ToFunc()
-}
-
-// ByRawOutputTokens orders the results by the raw_output_tokens field.
-func ByRawOutputTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRawOutputTokens, opts...).ToFunc()
-}
-
-// ByRawCacheReadTokens orders the results by the raw_cache_read_tokens field.
-func ByRawCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRawCacheReadTokens, opts...).ToFunc()
-}
-
-// ByRawCacheCreationTokens orders the results by the raw_cache_creation_tokens field.
-func ByRawCacheCreationTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRawCacheCreationTokens, opts...).ToFunc()
-}
-
-// ByRawCacheCreation5mTokens orders the results by the raw_cache_creation_5m_tokens field.
-func ByRawCacheCreation5mTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRawCacheCreation5mTokens, opts...).ToFunc()
-}
-
-// ByRawCacheCreation1hTokens orders the results by the raw_cache_creation_1h_tokens field.
-func ByRawCacheCreation1hTokens(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRawCacheCreation1hTokens, opts...).ToFunc()
-}
-
-// ByUsageAllocationVersion orders the results by the usage_allocation_version field.
-func ByUsageAllocationVersion(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUsageAllocationVersion, opts...).ToFunc()
-}
-
-// ByUsageAllocationKind orders the results by the usage_allocation_kind field.
-func ByUsageAllocationKind(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldUsageAllocationKind, opts...).ToFunc()
 }
 
 // ByInputCost orders the results by the input_cost field.

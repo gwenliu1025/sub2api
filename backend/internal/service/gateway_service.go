@@ -536,13 +536,9 @@ type ClaudeUsage struct {
 
 // ForwardResult 转发结果
 type ForwardResult struct {
-	RequestID              string
-	Usage                  ClaudeUsage
-	RawUsage               ClaudeUsage
-	ResponseUsage          ClaudeUsage
-	UsageAllocationVersion int16
-	UsageAllocationKind    UsageAllocationKind
-	Model                  string
+	RequestID string
+	Usage     ClaudeUsage
+	Model     string
 	// UpstreamModel is the actual upstream model after mapping.
 	// Prefer empty when it is identical to Model; persistence normalizes equal values away as no-op mappings.
 	UpstreamModel    string
@@ -603,43 +599,42 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 
 // GatewayService handles API gateway operations
 type GatewayService struct {
-	accountRepo                 AccountRepository
-	groupRepo                   GroupRepository
-	usageLogRepo                UsageLogRepository
-	usageBillingRepo            UsageBillingRepository
-	userRepo                    UserRepository
-	userSubRepo                 UserSubscriptionRepository
-	userGroupRateRepo           UserGroupRateRepository
-	cache                       GatewayCache
-	digestStore                 *DigestSessionStore
-	cfg                         *config.Config
-	schedulerSnapshot           *SchedulerSnapshotService
-	billingService              *BillingService
-	rateLimitService            *RateLimitService
-	billingCacheService         *BillingCacheService
-	identityService             *IdentityService
-	httpUpstream                HTTPUpstream
-	deferredService             *DeferredService
-	concurrencyService          *ConcurrencyService
-	claudeTokenProvider         *ClaudeTokenProvider
-	sessionLimitCache           SessionLimitCache // 会话数量限制缓存（仅 Anthropic OAuth/SetupToken）
-	rpmCache                    RPMCache          // RPM 计数缓存（仅 Anthropic OAuth/SetupToken）
-	equivalentCacheV2StateStore EquivalentCacheV2StateStore
-	userGroupRateResolver       *userGroupRateResolver
-	userGroupRateCache          *gocache.Cache
-	userGroupRateSF             singleflight.Group
-	modelsListCache             *gocache.Cache
-	modelsListCacheTTL          time.Duration
-	settingService              *SettingService
-	responseHeaderFilter        *responseheaders.CompiledHeaderFilter
-	debugModelRouting           atomic.Bool
-	debugClaudeMimic            atomic.Bool
-	channelService              *ChannelService
-	resolver                    *ModelPricingResolver
-	debugGatewayBodyFile        atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
-	tlsFPProfileService         *TLSFingerprintProfileService
-	balanceNotifyService        *BalanceNotifyService
-	userPlatformQuotaRepo       UserPlatformQuotaRepository
+	accountRepo           AccountRepository
+	groupRepo             GroupRepository
+	usageLogRepo          UsageLogRepository
+	usageBillingRepo      UsageBillingRepository
+	userRepo              UserRepository
+	userSubRepo           UserSubscriptionRepository
+	userGroupRateRepo     UserGroupRateRepository
+	cache                 GatewayCache
+	digestStore           *DigestSessionStore
+	cfg                   *config.Config
+	schedulerSnapshot     *SchedulerSnapshotService
+	billingService        *BillingService
+	rateLimitService      *RateLimitService
+	billingCacheService   *BillingCacheService
+	identityService       *IdentityService
+	httpUpstream          HTTPUpstream
+	deferredService       *DeferredService
+	concurrencyService    *ConcurrencyService
+	claudeTokenProvider   *ClaudeTokenProvider
+	sessionLimitCache     SessionLimitCache // 会话数量限制缓存（仅 Anthropic OAuth/SetupToken）
+	rpmCache              RPMCache          // RPM 计数缓存（仅 Anthropic OAuth/SetupToken）
+	userGroupRateResolver *userGroupRateResolver
+	userGroupRateCache    *gocache.Cache
+	userGroupRateSF       singleflight.Group
+	modelsListCache       *gocache.Cache
+	modelsListCacheTTL    time.Duration
+	settingService        *SettingService
+	responseHeaderFilter  *responseheaders.CompiledHeaderFilter
+	debugModelRouting     atomic.Bool
+	debugClaudeMimic      atomic.Bool
+	channelService        *ChannelService
+	resolver              *ModelPricingResolver
+	debugGatewayBodyFile  atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
+	tlsFPProfileService   *TLSFingerprintProfileService
+	balanceNotifyService  *BalanceNotifyService
+	userPlatformQuotaRepo UserPlatformQuotaRepository
 }
 
 // NewGatewayService creates a new GatewayService
@@ -664,7 +659,6 @@ func NewGatewayService(
 	claudeTokenProvider *ClaudeTokenProvider,
 	sessionLimitCache SessionLimitCache,
 	rpmCache RPMCache,
-	equivalentCacheV2StateStore EquivalentCacheV2StateStore,
 	digestStore *DigestSessionStore,
 	settingService *SettingService,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -677,38 +671,37 @@ func NewGatewayService(
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
 
 	svc := &GatewayService{
-		accountRepo:                 accountRepo,
-		groupRepo:                   groupRepo,
-		usageLogRepo:                usageLogRepo,
-		usageBillingRepo:            usageBillingRepo,
-		userRepo:                    userRepo,
-		userSubRepo:                 userSubRepo,
-		userGroupRateRepo:           userGroupRateRepo,
-		cache:                       cache,
-		digestStore:                 digestStore,
-		cfg:                         cfg,
-		schedulerSnapshot:           schedulerSnapshot,
-		concurrencyService:          concurrencyService,
-		billingService:              billingService,
-		rateLimitService:            rateLimitService,
-		billingCacheService:         billingCacheService,
-		identityService:             identityService,
-		httpUpstream:                httpUpstream,
-		deferredService:             deferredService,
-		claudeTokenProvider:         claudeTokenProvider,
-		sessionLimitCache:           sessionLimitCache,
-		rpmCache:                    rpmCache,
-		equivalentCacheV2StateStore: equivalentCacheV2StateStore,
-		userGroupRateCache:          gocache.New(userGroupRateTTL, time.Minute),
-		settingService:              settingService,
-		modelsListCache:             gocache.New(modelsListTTL, time.Minute),
-		modelsListCacheTTL:          modelsListTTL,
-		responseHeaderFilter:        compileResponseHeaderFilter(cfg),
-		tlsFPProfileService:         tlsFPProfileService,
-		channelService:              channelService,
-		resolver:                    resolver,
-		balanceNotifyService:        balanceNotifyService,
-		userPlatformQuotaRepo:       userPlatformQuotaRepo,
+		accountRepo:           accountRepo,
+		groupRepo:             groupRepo,
+		usageLogRepo:          usageLogRepo,
+		usageBillingRepo:      usageBillingRepo,
+		userRepo:              userRepo,
+		userSubRepo:           userSubRepo,
+		userGroupRateRepo:     userGroupRateRepo,
+		cache:                 cache,
+		digestStore:           digestStore,
+		cfg:                   cfg,
+		schedulerSnapshot:     schedulerSnapshot,
+		concurrencyService:    concurrencyService,
+		billingService:        billingService,
+		rateLimitService:      rateLimitService,
+		billingCacheService:   billingCacheService,
+		identityService:       identityService,
+		httpUpstream:          httpUpstream,
+		deferredService:       deferredService,
+		claudeTokenProvider:   claudeTokenProvider,
+		sessionLimitCache:     sessionLimitCache,
+		rpmCache:              rpmCache,
+		userGroupRateCache:    gocache.New(userGroupRateTTL, time.Minute),
+		settingService:        settingService,
+		modelsListCache:       gocache.New(modelsListTTL, time.Minute),
+		modelsListCacheTTL:    modelsListTTL,
+		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
+		tlsFPProfileService:   tlsFPProfileService,
+		channelService:        channelService,
+		resolver:              resolver,
+		balanceNotifyService:  balanceNotifyService,
+		userPlatformQuotaRepo: userPlatformQuotaRepo,
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
