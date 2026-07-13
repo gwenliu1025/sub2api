@@ -14,7 +14,7 @@ import (
 const (
 	equivalentCacheV2StateRedisPrefix        = "equivalent_cache_v2:state:"
 	equivalentCacheV2StateTTLMilliseconds    = 70 * 60 * 1000
-	equivalentCacheV2MinimumReads            = 4
+	equivalentCacheV2MinimumReads            = 3
 	equivalentCacheV2MinimumAgeMilliseconds  = 10 * 60 * 1000
 	equivalentCacheV2RefreshMinMilliseconds  = 45 * 60 * 1000
 	equivalentCacheV2RefreshSpanMilliseconds = 20 * 60 * 1000

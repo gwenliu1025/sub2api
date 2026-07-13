@@ -179,7 +179,7 @@ func TestEquivalentCacheV2State_RefreshUsesProtectedFortyFiveToSixtyFiveMinuteWi
 	require.EqualValues(t, 2, inWindow.Generation)
 }
 
-func TestEquivalentCacheV2State_RefreshRequiresFourPriorReads(t *testing.T) {
+func TestEquivalentCacheV2State_RefreshRequiresThreePriorReads(t *testing.T) {
 	store, mr := newEquivalentCacheV2StateTestStore(t)
 	ctx := context.Background()
 
@@ -205,7 +205,8 @@ func TestEquivalentCacheV2State_RefreshRequiresFourPriorReads(t *testing.T) {
 		RawInputTokens: 2000,
 	})
 	require.NoError(t, err)
-	require.False(t, protected.Create)
+	require.True(t, protected.Create)
+	require.EqualValues(t, 2, protected.Generation)
 }
 
 func TestEquivalentCacheV2State_ConcurrentNewSessionHasAtMostOneCreate(t *testing.T) {

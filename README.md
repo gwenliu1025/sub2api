@@ -47,18 +47,15 @@ See [Equivalent Cache Billing](docs/EQUIVALENT_CACHE_BILLING_CN.md) and
 
 ### Release Composition
 
-Every release from this fork contains both:
+本 fork 的发布资产由本仓库独立构建，每个版本同时包含：
 
-1. The changes from the matching upstream `Wei-Shaw/sub2api` release.
-2. The additional changes maintained by `gwenliu1025/sub2api`.
+1. 已合并的最新 `Wei-Shaw/sub2api` 原作者正式版本更新。
+2. `gwenliu1025/sub2api` 维护的额外定制更新。
 
-For `v0.1.152`, the upstream portion adds xAI API Key accounts, Grok OAuth
-prompt caching, Codex alpha/search forwarding with per-call billing, richer
-tool bridging, and fixes for Codex identity, remote compaction, compact
-keepalives, and Anthropic cache-creation usage. The fork portion adds Kiro-Go
-Equivalent Cache V2, raw-cost locking, equivalent-cache audit persistence,
-fork-owned release and Docker update metadata, and the streaming final-usage
-fix that keeps streaming and non-streaming allocation behavior consistent.
+重建后的 `v0.1.152` 沿用已经合并的原作者 `v0.1.152` 基线，并继续包含本 Fork 的
+Kiro-Go 等效缓存 V2、原始成本锁定、等效缓存审计持久化、Fork 自有 Release 与
+Docker 更新能力，以及流式最终完整用量分配修复。本次同版本重建将同一会话再次
+创建缓存前的最低读取次数从 4 次调整为 3 次，适度提高缓存创建事件出现频率。
 
 Use this fork's [Releases](https://github.com/gwenliu1025/sub2api/releases) and
 `ghcr.io/gwenliu1025/sub2api:X.Y.Z` images when deploying this version.
