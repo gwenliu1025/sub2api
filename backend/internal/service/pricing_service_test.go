@@ -108,6 +108,23 @@ func TestParsePricingData_拒绝Claude非标准缓存价格(t *testing.T) {
 	}
 }
 
+func TestParsePricingData_拒绝支持缓存但缺少缓存价格的Claude条目(t *testing.T) {
+	body := []byte(`{
+		"claude-opus-4-6": {
+			"input_cost_per_token": 0.000005,
+			"output_cost_per_token": 0.000025,
+			"litellm_provider": "anthropic",
+			"supports_prompt_caching": true
+		}
+	}`)
+
+	_, err := (&PricingService{}).parsePricingData(body)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "claude-opus-4-6")
+	require.Contains(t, err.Error(), "cache_read_input_token_cost")
+}
+
 func TestParsePricingData_接受Claude标准缓存价格及别名(t *testing.T) {
 	body := []byte(`{
 		"claude-opus-4-6": {

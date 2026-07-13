@@ -192,6 +192,11 @@ func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricin
 		resolved.BasePricing.CacheReadPricePerToken = *chPricing.CacheReadPrice
 		resolved.BasePricing.CacheReadPricePerTokenPriority = *chPricing.CacheReadPrice
 	}
+	if isClaudeChannelPricing(*chPricing) && chPricing.InputPrice != nil {
+		applyClaudeStandardCachePricing(resolved.BasePricing)
+		resolved.BasePricing.CacheCreationPriceExplicit = true
+		resolved.SupportsCacheBreakdown = true
+	}
 	// 渠道定价覆盖一切：显式配置则用配置值，未配置则归零（不回退到 LiteLLM）
 	if chPricing.ImageOutputPrice != nil {
 		resolved.BasePricing.ImageOutputPricePerToken = *chPricing.ImageOutputPrice
@@ -261,6 +266,10 @@ func intervalToModelPricing(iv *PricingInterval, supportsCacheBreakdown bool, ch
 	if iv.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *iv.CacheReadPrice
 		pricing.CacheReadPricePerTokenPriority = *iv.CacheReadPrice
+	}
+	if chPricing != nil && isClaudeChannelPricing(*chPricing) && iv.InputPrice != nil {
+		applyClaudeStandardCachePricing(pricing)
+		pricing.CacheCreationPriceExplicit = true
 	}
 	// 渠道定价存在时，ImageOutputPrice 显式覆盖
 	if chPricing != nil {

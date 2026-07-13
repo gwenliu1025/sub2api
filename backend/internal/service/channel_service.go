@@ -616,6 +616,19 @@ func validateClaudeChannelCachePricing(pricing []ChannelModelPricing) error {
 		if !isClaudeChannelPricing(p) {
 			continue
 		}
+		billingMode := p.BillingMode
+		if billingMode == "" {
+			billingMode = BillingModeToken
+		}
+		if billingMode != BillingModeToken {
+			continue
+		}
+		if p.InputPrice != nil && *p.InputPrice <= 0 {
+			return infraerrors.BadRequest(
+				"CLAUDE_CACHE_INPUT_PRICE_REQUIRED",
+				fmt.Sprintf("Claude 模型 %v 的 flat input_price 必须大于零", p.Models),
+			)
+		}
 		if p.CacheWritePrice != nil {
 			return infraerrors.BadRequest(
 				"CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED",
@@ -626,6 +639,12 @@ func validateClaudeChannelCachePricing(pricing []ChannelModelPricing) error {
 			return err
 		}
 		for i, interval := range p.Intervals {
+			if interval.InputPrice == nil || *interval.InputPrice <= 0 {
+				return infraerrors.BadRequest(
+					"CLAUDE_CACHE_INPUT_PRICE_REQUIRED",
+					fmt.Sprintf("Claude 模型 %v 的区间 #%d 必须配置大于零的 input_price", p.Models, i+1),
+				)
+			}
 			if interval.CacheWritePrice != nil {
 				return infraerrors.BadRequest(
 					"CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED",

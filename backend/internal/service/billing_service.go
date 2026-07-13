@@ -197,58 +197,22 @@ func NewBillingService(cfg *config.Config, pricingService *PricingService) *Bill
 // 价格单位：USD per token（与LiteLLM格式一致）
 func (s *BillingService) initFallbackPricing() {
 	// Claude 4.5 Opus
-	s.fallbackPrices["claude-opus-4.5"] = &ModelPricing{
-		InputPricePerToken:         5e-6,    // $5 per MTok
-		OutputPricePerToken:        25e-6,   // $25 per MTok
-		CacheCreationPricePerToken: 6.25e-6, // $6.25 per MTok
-		CacheReadPricePerToken:     0.5e-6,  // $0.50 per MTok
-		SupportsCacheBreakdown:     false,
-	}
+	s.fallbackPrices["claude-opus-4.5"] = newClaudeFallbackPricing(5e-6, 25e-6)
 
 	// Claude 4 Sonnet
-	s.fallbackPrices["claude-sonnet-4"] = &ModelPricing{
-		InputPricePerToken:         3e-6,    // $3 per MTok
-		OutputPricePerToken:        15e-6,   // $15 per MTok
-		CacheCreationPricePerToken: 3.75e-6, // $3.75 per MTok
-		CacheReadPricePerToken:     0.3e-6,  // $0.30 per MTok
-		SupportsCacheBreakdown:     false,
-	}
+	s.fallbackPrices["claude-sonnet-4"] = newClaudeFallbackPricing(3e-6, 15e-6)
 
 	// Claude 3.5 Sonnet
-	s.fallbackPrices["claude-3-5-sonnet"] = &ModelPricing{
-		InputPricePerToken:         3e-6,    // $3 per MTok
-		OutputPricePerToken:        15e-6,   // $15 per MTok
-		CacheCreationPricePerToken: 3.75e-6, // $3.75 per MTok
-		CacheReadPricePerToken:     0.3e-6,  // $0.30 per MTok
-		SupportsCacheBreakdown:     false,
-	}
+	s.fallbackPrices["claude-3-5-sonnet"] = newClaudeFallbackPricing(3e-6, 15e-6)
 
 	// Claude 3.5 Haiku
-	s.fallbackPrices["claude-3-5-haiku"] = &ModelPricing{
-		InputPricePerToken:         1e-6,    // $1 per MTok
-		OutputPricePerToken:        5e-6,    // $5 per MTok
-		CacheCreationPricePerToken: 1.25e-6, // $1.25 per MTok
-		CacheReadPricePerToken:     0.1e-6,  // $0.10 per MTok
-		SupportsCacheBreakdown:     false,
-	}
+	s.fallbackPrices["claude-3-5-haiku"] = newClaudeFallbackPricing(1e-6, 5e-6)
 
 	// Claude 3 Opus
-	s.fallbackPrices["claude-3-opus"] = &ModelPricing{
-		InputPricePerToken:         15e-6,    // $15 per MTok
-		OutputPricePerToken:        75e-6,    // $75 per MTok
-		CacheCreationPricePerToken: 18.75e-6, // $18.75 per MTok
-		CacheReadPricePerToken:     1.5e-6,   // $1.50 per MTok
-		SupportsCacheBreakdown:     false,
-	}
+	s.fallbackPrices["claude-3-opus"] = newClaudeFallbackPricing(15e-6, 75e-6)
 
 	// Claude 3 Haiku
-	s.fallbackPrices["claude-3-haiku"] = &ModelPricing{
-		InputPricePerToken:         0.25e-6, // $0.25 per MTok
-		OutputPricePerToken:        1.25e-6, // $1.25 per MTok
-		CacheCreationPricePerToken: 0.3e-6,  // $0.30 per MTok
-		CacheReadPricePerToken:     0.03e-6, // $0.03 per MTok
-		SupportsCacheBreakdown:     false,
-	}
+	s.fallbackPrices["claude-3-haiku"] = newClaudeFallbackPricing(0.25e-6, 1.25e-6)
 
 	// Claude 4.6 Opus (与4.5同价)
 	s.fallbackPrices["claude-opus-4.6"] = s.fallbackPrices["claude-opus-4.5"]
@@ -789,7 +753,7 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 			price5m := litellmPricing.CacheCreationInputTokenCost
 			price1h := litellmPricing.CacheCreationInputTokenCostAbove1hr
 			enableBreakdown := price1h > 0 && price1h > price5m
-			return s.applyModelSpecificPricingPolicy(model, &ModelPricing{
+			pricing := &ModelPricing{
 				InputPricePerToken:                 litellmPricing.InputCostPerToken,
 				InputPricePerTokenPriority:         litellmPricing.InputCostPerTokenPriority,
 				OutputPricePerToken:                litellmPricing.OutputCostPerToken,
@@ -805,7 +769,12 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 				LongContextInputMultiplier:         litellmPricing.LongContextInputCostMultiplier,
 				LongContextOutputMultiplier:        litellmPricing.LongContextOutputCostMultiplier,
 				ImageOutputPricePerToken:           litellmPricing.OutputCostPerImageToken,
-			}), nil
+			}
+			if isClaudePricingEntry(model, litellmPricing.LiteLLMProvider) &&
+				price5m == 0 && price1h == 0 && litellmPricing.CacheReadInputTokenCost == 0 {
+				applyClaudeStandardCachePricing(pricing)
+			}
+			return s.applyModelSpecificPricingPolicy(model, pricing), nil
 		}
 	}
 
@@ -824,8 +793,16 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 }
 
 func validateClaudeCachePriceRatios(model string, pricing *LiteLLMModelPricing) error {
-	if pricing == nil || !isClaudePricingEntry(model, pricing.LiteLLMProvider) ||
-		pricing.InputCostPerToken <= 0 || pricing.CacheCreationInputTokenCostAbove1hr <= 0 {
+	if pricing == nil || !isClaudePricingEntry(model, pricing.LiteLLMProvider) {
+		return nil
+	}
+	if pricing.InputCostPerToken <= 0 {
+		return fmt.Errorf("模型 %s 的 Claude 缓存价格配置要求 input_cost_per_token 大于零", model)
+	}
+	hasCachePricing := pricing.CacheReadInputTokenCost != 0 ||
+		pricing.CacheCreationInputTokenCost != 0 ||
+		pricing.CacheCreationInputTokenCostAbove1hr != 0
+	if !hasCachePricing {
 		return nil
 	}
 	return validateClaudeCachePriceRatiosForValues(
@@ -846,6 +823,14 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	}
 	if channelPricing == nil {
 		return pricing, nil
+	}
+	effectiveChannelPricing := *channelPricing
+	effectiveChannelPricing.Models = append([]string(nil), channelPricing.Models...)
+	if containsClaudeModelIdentifier(model) && !isClaudeChannelPricing(effectiveChannelPricing) {
+		effectiveChannelPricing.Models = append(effectiveChannelPricing.Models, model)
+	}
+	if err := validateClaudeChannelCachePricing([]ChannelModelPricing{effectiveChannelPricing}); err != nil {
+		return nil, err
 	}
 	// 防止修改 fallbackPrices 中的共享指针
 	cloned := *pricing
@@ -868,6 +853,11 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	if channelPricing.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *channelPricing.CacheReadPrice
 		pricing.CacheReadPricePerTokenPriority = *channelPricing.CacheReadPrice
+	}
+	if (containsClaudeModelIdentifier(model) || isClaudeChannelPricing(*channelPricing)) &&
+		channelPricing.InputPrice != nil {
+		applyClaudeStandardCachePricing(pricing)
+		pricing.CacheCreationPriceExplicit = true
 	}
 	if channelPricing.ImageOutputPrice != nil {
 		pricing.ImageOutputPricePerToken = *channelPricing.ImageOutputPrice

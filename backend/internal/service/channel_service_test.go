@@ -1821,6 +1821,49 @@ func TestValidatePricingEntries_保留非Claude缓存写入价格(t *testing.T) 
 	require.NoError(t, err)
 }
 
+func TestValidatePricingEntries_拒绝Claude缺少正数输入价的区间(t *testing.T) {
+	tests := []struct {
+		name       string
+		inputPrice *float64
+	}{
+		{name: "缺少输入价"},
+		{name: "零输入价", inputPrice: testPtrFloat64(0)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePricingEntries([]ChannelModelPricing{{
+				Platform: PlatformAnthropic,
+				Models:   []string{"claude-opus-4-6"},
+				Intervals: []PricingInterval{{
+					MinTokens:   0,
+					MaxTokens:   testPtrInt(200000),
+					InputPrice:  tt.inputPrice,
+					OutputPrice: testPtrFloat64(25e-6),
+				}},
+			}})
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "CLAUDE_CACHE_INPUT_PRICE_REQUIRED")
+		})
+	}
+}
+
+func TestValidatePricingEntries_Claude按次渠道不要求缓存输入价(t *testing.T) {
+	err := validatePricingEntries([]ChannelModelPricing{{
+		Platform:    PlatformAnthropic,
+		Models:      []string{"claude-opus-4-6"},
+		BillingMode: BillingModePerRequest,
+		Intervals: []PricingInterval{{
+			MinTokens:       0,
+			MaxTokens:       testPtrInt(200000),
+			PerRequestPrice: testPtrFloat64(0.05),
+		}},
+	}})
+
+	require.NoError(t, err)
+}
+
 func TestUpdate_InvalidatesChannelCache(t *testing.T) {
 	existing := &Channel{
 		ID:     1,

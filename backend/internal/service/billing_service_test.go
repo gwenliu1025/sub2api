@@ -112,6 +112,25 @@ func TestGetModelPricing_FallbackMatchesByFamily(t *testing.T) {
 	}
 }
 
+func TestGetModelPricing_ClaudeFallback保留标准缓存明细价格(t *testing.T) {
+	svc := newTestBillingService()
+
+	for _, model := range []string{
+		"claude-opus-4-6",
+		"claude-sonnet-4-6",
+		"claude-haiku-4-5",
+	} {
+		t.Run(model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(model)
+			require.NoError(t, err)
+			require.True(t, pricing.SupportsCacheBreakdown)
+			require.InDelta(t, pricing.InputPricePerToken*0.10, pricing.CacheReadPricePerToken, 1e-12)
+			require.InDelta(t, pricing.InputPricePerToken*1.25, pricing.CacheCreation5mPrice, 1e-12)
+			require.InDelta(t, pricing.InputPricePerToken*2.00, pricing.CacheCreation1hPrice, 1e-12)
+		})
+	}
+}
+
 func TestGetModelPricing_CaseInsensitive(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -1420,7 +1439,7 @@ func TestGetModelPricingWithChannel_OverrideAllFields(t *testing.T) {
 		CacheReadPrice:   testPtrFloat64(1e-6),
 		ImageOutputPrice: testPtrFloat64(50e-6),
 	}
-	pricing, err := svc.GetModelPricingWithChannel("claude-sonnet-4", chPricing)
+	pricing, err := svc.GetModelPricingWithChannel("gpt-5.6-sol", chPricing)
 	require.NoError(t, err)
 
 	require.InDelta(t, 10e-6, pricing.InputPricePerToken, 1e-12)
@@ -1441,7 +1460,7 @@ func TestGetModelPricingWithChannel_CacheWritePriceAffects5mAnd1h(t *testing.T) 
 	chPricing := &ChannelModelPricing{
 		CacheWritePrice: testPtrFloat64(7e-6),
 	}
-	pricing, err := svc.GetModelPricingWithChannel("claude-sonnet-4", chPricing)
+	pricing, err := svc.GetModelPricingWithChannel("gpt-5.6-sol", chPricing)
 	require.NoError(t, err)
 
 	// CacheWritePrice should set all three: CacheCreationPricePerToken, 5m, and 1h
@@ -1456,12 +1475,26 @@ func TestGetModelPricingWithChannel_CacheReadPriceAffectsPriority(t *testing.T) 
 	chPricing := &ChannelModelPricing{
 		CacheReadPrice: testPtrFloat64(2e-6),
 	}
-	pricing, err := svc.GetModelPricingWithChannel("claude-sonnet-4", chPricing)
+	pricing, err := svc.GetModelPricingWithChannel("gpt-5.6-sol", chPricing)
 	require.NoError(t, err)
 
 	// CacheReadPrice should set both normal and priority
 	require.InDelta(t, 2e-6, pricing.CacheReadPricePerToken, 1e-12)
 	require.InDelta(t, 2e-6, pricing.CacheReadPricePerTokenPriority, 1e-12)
+}
+
+func TestGetModelPricingWithChannel_拒绝Claude单一缓存写入价(t *testing.T) {
+	svc := newTestBillingService()
+	chPricing := &ChannelModelPricing{
+		InputPrice:      testPtrFloat64(3e-6),
+		CacheWritePrice: testPtrFloat64(3.75e-6),
+	}
+
+	pricing, err := svc.GetModelPricingWithChannel("claude-sonnet-4", chPricing)
+
+	require.Error(t, err)
+	require.Nil(t, pricing)
+	require.Contains(t, err.Error(), "CLAUDE_CACHE_WRITE_PRICE_UNSUPPORTED")
 }
 
 func TestGetModelPricingWithChannel_UnknownModelReturnsError(t *testing.T) {

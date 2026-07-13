@@ -897,3 +897,49 @@ func TestEquivalentCacheCleanupRejectsNonStandardCachePrice(t *testing.T) {
 	require.Contains(t, err.Error(), model)
 	require.Contains(t, strings.ToLower(err.Error()), "cache", "验收错误必须明确指出缓存价格配置问题")
 }
+
+func TestClaudeFlat渠道输入价覆盖时派生标准缓存价格(t *testing.T) {
+	resolver := NewModelPricingResolver(nil, &BillingService{})
+	resolved := &ResolvedPricing{
+		Mode: BillingModeToken,
+		BasePricing: &ModelPricing{
+			InputPricePerToken:     5e-6,
+			CacheReadPricePerToken: 0.5e-6,
+			CacheCreation5mPrice:   6.25e-6,
+			CacheCreation1hPrice:   10e-6,
+			SupportsCacheBreakdown: true,
+		},
+		SupportsCacheBreakdown: true,
+	}
+	inputPrice := 4e-6
+
+	resolver.applyTokenOverrides(&ChannelModelPricing{
+		Platform:   PlatformAnthropic,
+		Models:     []string{"claude-opus-4-6"},
+		InputPrice: &inputPrice,
+	}, resolved)
+
+	require.True(t, resolved.BasePricing.SupportsCacheBreakdown)
+	require.InDelta(t, inputPrice*0.10, resolved.BasePricing.CacheReadPricePerToken, 1e-12)
+	require.InDelta(t, inputPrice*1.25, resolved.BasePricing.CacheCreation5mPrice, 1e-12)
+	require.InDelta(t, inputPrice*2.00, resolved.BasePricing.CacheCreation1hPrice, 1e-12)
+}
+
+func TestClaudeInterval渠道输入价覆盖时派生标准缓存价格(t *testing.T) {
+	inputPrice := 4e-6
+	channelPricing := &ChannelModelPricing{
+		Platform: PlatformAnthropic,
+		Models:   []string{"us.anthropic.claude-opus-4-6-v1:0"},
+	}
+
+	pricing := intervalToModelPricing(
+		&PricingInterval{InputPrice: &inputPrice},
+		true,
+		channelPricing,
+	)
+
+	require.True(t, pricing.SupportsCacheBreakdown)
+	require.InDelta(t, inputPrice*0.10, pricing.CacheReadPricePerToken, 1e-12)
+	require.InDelta(t, inputPrice*1.25, pricing.CacheCreation5mPrice, 1e-12)
+	require.InDelta(t, inputPrice*2.00, pricing.CacheCreation1hPrice, 1e-12)
+}

@@ -36,6 +36,9 @@ func validateClaudeRawCachePricing(model string, entry *LiteLLMRawEntry) error {
 		entry.CacheCreationInputTokenCost != nil ||
 		entry.CacheCreationInputTokenCostAbove1hr != nil
 	if !hasCachePricing {
+		if entry.SupportsPromptCaching {
+			return fmt.Errorf("模型 %s 的 Claude 缓存价格配置缺少 cache_read_input_token_cost", model)
+		}
 		return nil
 	}
 
@@ -87,4 +90,30 @@ func validateClaudeCachePriceRatiosForValues(model string, input, cacheRead, cac
 func cachePricesEqual(actual, expected float64) bool {
 	tolerance := math.Max(1e-15, math.Abs(expected)*1e-9)
 	return math.Abs(actual-expected) <= tolerance
+}
+
+func applyClaudeStandardCachePricing(pricing *ModelPricing) {
+	if pricing == nil || pricing.InputPricePerToken <= 0 {
+		return
+	}
+
+	pricing.CacheReadPricePerToken = pricing.InputPricePerToken * claudeCacheReadRatio
+	pricing.CacheCreationPricePerToken = pricing.InputPricePerToken * claudeCacheWrite5mRatio
+	pricing.CacheCreation5mPrice = pricing.InputPricePerToken * claudeCacheWrite5mRatio
+	pricing.CacheCreation1hPrice = pricing.InputPricePerToken * claudeCacheWrite1hRatio
+	pricing.SupportsCacheBreakdown = true
+
+	if pricing.InputPricePerTokenPriority > 0 {
+		pricing.CacheReadPricePerTokenPriority = pricing.InputPricePerTokenPriority * claudeCacheReadRatio
+		pricing.CacheCreationPricePerTokenPriority = pricing.InputPricePerTokenPriority * claudeCacheWrite5mRatio
+	}
+}
+
+func newClaudeFallbackPricing(inputPrice, outputPrice float64) *ModelPricing {
+	pricing := &ModelPricing{
+		InputPricePerToken:  inputPrice,
+		OutputPricePerToken: outputPrice,
+	}
+	applyClaudeStandardCachePricing(pricing)
+	return pricing
 }
