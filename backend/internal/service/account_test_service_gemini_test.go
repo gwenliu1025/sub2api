@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,8 +38,7 @@ func TestCreateGeminiTestPayload_ImageModel(t *testing.T) {
 }
 
 func TestProcessGeminiStream_EmitsImageEvent(t *testing.T) {
-	t.Parallel()
-	gin.SetMode(gin.TestMode)
+	parallelGinTest(t)
 
 	ctx, recorder := newTestContext()
 	svc := &AccountTestService{}

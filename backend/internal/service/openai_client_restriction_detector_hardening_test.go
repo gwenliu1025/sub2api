@@ -11,7 +11,6 @@ import (
 )
 
 func hdrCtx(h map[string]string) *gin.Context {
-	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)

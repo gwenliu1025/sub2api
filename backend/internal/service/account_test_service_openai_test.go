@@ -54,7 +54,6 @@ func newJSONResponse(status int, body string) *http.Response {
 // --- test functions ---
 
 func newTestContext() (*gin.Context, *httptest.ResponseRecorder) {
-	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/1/test", nil)
