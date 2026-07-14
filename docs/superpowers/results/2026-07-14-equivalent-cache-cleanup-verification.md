@@ -7,6 +7,8 @@
 - 分支：`feat/remove-equivalent-cache`
 - 清退验证基线提交：`08907ade`
 - 独立审查定价修正提交：`4cde30c3`
+- 最终毕业机候选提交：
+  `06a25c999c3d0cde157d30cde694fba2960e6d10`
 - 发布版本文件：`backend/cmd/server/VERSION = 0.1.152`
 - 目标：确认 Equivalent Cache V1/V2 运行时已移除，同时保留标准 Anthropic
   usage 解析、分模型定价、有效倍率、原生 TTL override 和历史迁移兼容。
@@ -145,7 +147,7 @@ backend/migrations/174_usage_log_equivalent_cache_v2_audit.sql
 - Claude 缓存价格缺失保护、动态价格派生和分模型相对价格回归测试包含在已
   通过的 service 全量测试中；
 - 发布版本保持 `0.1.152`，没有创建 `0.1.153`；
-- Windows 本机未执行 race 测试；`go test -race ./...` 保留到 Linux 毕业机；
+- Linux 毕业机的普通全量、unit 标签全量和定向 service race 均通过；
 - 本地验证结束时，除本验证文档外没有其他未提交差异。
 
 ## 独立审查追加修正
@@ -212,36 +214,50 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0 run ./...
 部署源码：
 
 ```text
-1c0f22a8c01588f7aa9a35a4aed48ac65bce4098
+06a25c999c3d0cde157d30cde694fba2960e6d10
+/home/ubuntu/staging/kiro-native-high-cache-20260714/sub2api-build-06a25c99-20260714-023000z/src
+source.tar.gz SHA256=8ac72157e7649abef3676f52b4bf0d561cea6a743dbc4c8bf8df960d918b74c9
 ```
 
 部署镜像：
 
 ```text
 ghcr.io/gwenliu1025/sub2api:0.1.152
-本机镜像 ID=sha256:af52620f4dc4b293436d79e687520791198915f16e8b8826dcdb5a990f1cca9b
+本机镜像 ID=sha256:015e79c653d710174b5e6bc0d8618a982fc28c8af0698d196d22ab4869148720
 version=0.1.152
-revision=1c0f22a8c01588f7aa9a35a4aed48ac65bce4098
-created=2026-07-14T00:57:07Z
+revision=06a25c999c3d0cde157d30cde694fba2960e6d10
+created=2026-07-14T02:32:04Z
+image_created=2026-07-14T02:32:55.751765136Z
 ```
 
 该镜像是毕业机本地候选。远端 GHCR 同标签仍是此前正式发布资产
 `sha256:8f7f1cb6874da8a1aa28095d3b66b14e80aa89cab34b011605f4d001787e0a0c`；
 正式重新发布前不得执行会重新拉取远端同标签的 Prepare、Activate 或 pull。
 
+覆盖同标签前，上一毕业机候选已建立精确回滚标签：
+
+```text
+local/sub2api:rollback-0.1.152-1c0f22a-20260714-022741z
+sha256:af52620f4dc4b293436d79e687520791198915f16e8b8826dcdb5a990f1cca9b
+```
+
 只重建 `sub2api` 后：
 
 ```text
-started=2026-07-14T01:20:22.651655106Z
+started=2026-07-14T02:34:10.443306229Z
 status=running
 health=healthy
-http://127.0.0.1:8080/health=200
 http://127.0.0.1:8080/healthz=200
 http://127.0.0.1/health=200
+http://127.0.0.1:8321/health=200
+Sub2API -> http://kiro-go-pr131:8321/health=200
+updater socket /v1/health=200
+updater socket /v1/status=200
 ```
 
 毕业机自动下载的上游价格文件包含不符合标准倍率的旧 Claude 3 缓存价格。
-候选版本安全拒绝该文件并加载镜像内置 fallback：
+候选版本此前已安全拒绝该文件并把镜像内置 fallback 写入运行数据目录。本次
+重建后运行文件与镜像内置文件仍完全一致：
 
 ```text
 fallback_sha256=9b7f21e48fedeb601d98fd77fe3bd36fb41d4f960f20fc5e55c353d5ad01e28b
@@ -273,8 +289,51 @@ go test ./internal/service \
 
 结果为 `ok`。
 
-Sub2API 的 `go test -race ./...` 尚未在 Linux 毕业机执行。本次追加验证不能
-替代该证据；它继续作为生产变更前需要补齐或书面接受的验证项。
+## Linux race 门禁
+
+最初普通全量 race 在 `internal/service` 发现 31 处数据竞争。根因归并为：
+
+- 并行测试在 `t.Parallel()` 后写 Gin 进程级全局模式；
+- dashboard 异步回调写测试桩计数器，而断言线程无同步读取。
+
+提交 `06a25c99` 只修改测试代码：包初始化时统一设置 Gin TestMode，并把
+并行 Gin 测试改用 `parallelGinTest(t)`；dashboard 测试桩计数器改为
+`atomic.Int32`。生产代码与 `1c0f22a8` 相比没有变化。
+
+最终 race 工作副本：
+
+```text
+/home/ubuntu/staging/kiro-native-high-cache-20260714/sub2api-race-fix-20260714-015824z
+```
+
+该工作副本的 13 个变更文件与提交 `06a25c99` 的构建 staging 逐文件
+`cmp` 一致。最终结果：
+
+```text
+定向 service race：
+started=2026-07-14T02:08:01.668243827Z
+finished=2026-07-14T02:08:35.394313592Z
+exit=0
+DATA RACE=0
+FAIL=0
+
+普通全量 race：
+started=2026-07-14T02:11:27.076645892Z
+finished=2026-07-14T02:13:07.884798757Z
+exit=0
+DATA RACE=0
+FAIL=0
+
+unit 标签全量 race：
+started=2026-07-14T02:14:24.335095473Z
+finished=2026-07-14T02:17:31.213114635Z
+exit=0
+DATA RACE=0
+FAIL=0
+```
+
+5 个已退出的 race 诊断容器已删除；对应日志和容器状态摘要保存在最终构建
+staging，运行中的 Sub2API、Kiro-Go 和无关容器未重建。
 
 真实同步和流式请求均已到达 Kiro-Go，但因 `accounts=0` 返回
 `503 No available accounts`。因此真实 usage、TTL 分布、换源和跨倍率扣费仍
