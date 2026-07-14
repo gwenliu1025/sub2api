@@ -5,7 +5,8 @@
 ## 验证范围
 
 - 分支：`feat/remove-equivalent-cache`
-- 验证代码提交：`08907ade`
+- 清退验证基线提交：`08907ade`
+- 独立审查定价修正提交：`4cde30c3`
 - 发布版本文件：`backend/cmd/server/VERSION = 0.1.152`
 - 目标：确认 Equivalent Cache V1/V2 运行时已移除，同时保留标准 Anthropic
   usage 解析、分模型定价、有效倍率、原生 TTL override 和历史迁移兼容。
@@ -146,3 +147,58 @@ backend/migrations/174_usage_log_equivalent_cache_v2_audit.sql
 - 发布版本保持 `0.1.152`，没有创建 `0.1.153`；
 - Windows 本机未执行 race 测试；`go test -race ./...` 保留到 Linux 毕业机；
 - 本地验证结束时，除本验证文档外没有其他未提交差异。
+
+## 独立审查追加修正
+
+最终独立审查发现 Kiro-Go 会对外返回 `claude-haiku-4.5`、
+`claude-opus-4.8` 等点号版本，而 Sub2API 定价表使用
+`claude-haiku-4-5`、`claude-opus-4-8` 短横线键。旧逻辑在精确匹配失败后会
+落入宽泛系列回退，可能把 Haiku 4.5 按 Claude 3 Haiku 计价，Opus 4.8 还会
+因 Go map 遍历顺序命中不同的 Opus 4 系列价格。
+
+修正提交 `4cde30c3` 完成以下处理：
+
+- Claude 点号版本、短横线版本、`anthropic/` 前缀和 `-thinking` 变体统一为
+  定价表的短横线基础键；
+- 系列回退补齐 Opus 4.8 和 Haiku 4.5；
+- 去版本后缀与系列模糊查找使用排序键，并优先精确价格键，不再依赖 Go map
+  迭代顺序；
+- 回归测试连续 100 次验证 Haiku 4.5 与 Opus 4.8 始终命中各自的正确绝对
+  输入、输出价格。
+
+TDD 红灯命令：
+
+```powershell
+go test ./internal/service `
+  -run '^TestPricingService_Claude点号版本精确匹配短横线价格键$' `
+  -count=1 -v
+```
+
+修正前四种点号/`-thinking` 输入均因未规范化而失败。修正后同一命令通过，
+并追加验证短横线输入。
+
+修正后重新执行：
+
+```powershell
+go test ./internal/service `
+  -run '(Pricing|EquivalentCacheCleanup|ClaudeFlat渠道|ClaudeInterval渠道)' `
+  -count=1
+go test -tags=unit ./internal/service `
+  -run '(Pricing|EquivalentCacheCleanup|ClaudeFlat渠道|ClaudeInterval渠道)' `
+  -count=1
+go test ./...
+go test -tags=unit ./...
+go build ./cmd/server
+$env:CGO_ENABLED = '0'
+go build -ldflags='-s -w -X main.Version=0.1.152' -trimpath `
+  -o bin/server ./cmd/server
+$env:GOPROXY = 'https://goproxy.cn,direct'
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0 run ./...
+```
+
+结果：
+
+- 两组定向 service 测试通过；
+- 普通全量与 unit 标签全量均通过；
+- 两个构建均退出码 `0`；
+- `golangci-lint v2.9.0` 返回 `0 issues`。
