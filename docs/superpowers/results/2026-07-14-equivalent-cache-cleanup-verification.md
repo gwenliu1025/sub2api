@@ -202,3 +202,80 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.9.0 run ./...
 - 普通全量与 unit 标签全量均通过；
 - 两个构建均退出码 `0`；
 - `golangci-lint v2.9.0` 返回 `0 issues`。
+
+## 毕业机定向部署追加验证
+
+毕业机：`157.254.187.242`
+
+生产机 `154.36.172.65` 未访问、未修改。
+
+部署源码：
+
+```text
+1c0f22a8c01588f7aa9a35a4aed48ac65bce4098
+```
+
+部署镜像：
+
+```text
+ghcr.io/gwenliu1025/sub2api:0.1.152
+本机镜像 ID=sha256:af52620f4dc4b293436d79e687520791198915f16e8b8826dcdb5a990f1cca9b
+version=0.1.152
+revision=1c0f22a8c01588f7aa9a35a4aed48ac65bce4098
+created=2026-07-14T00:57:07Z
+```
+
+该镜像是毕业机本地候选。远端 GHCR 同标签仍是此前正式发布资产
+`sha256:8f7f1cb6874da8a1aa28095d3b66b14e80aa89cab34b011605f4d001787e0a0c`；
+正式重新发布前不得执行会重新拉取远端同标签的 Prepare、Activate 或 pull。
+
+只重建 `sub2api` 后：
+
+```text
+started=2026-07-14T01:20:22.651655106Z
+status=running
+health=healthy
+http://127.0.0.1:8080/health=200
+http://127.0.0.1:8080/healthz=200
+http://127.0.0.1/health=200
+```
+
+毕业机自动下载的上游价格文件包含不符合标准倍率的旧 Claude 3 缓存价格。
+候选版本安全拒绝该文件并加载镜像内置 fallback：
+
+```text
+fallback_sha256=9b7f21e48fedeb601d98fd77fe3bd36fb41d4f960f20fc5e55c353d5ad01e28b
+models=196
+checked_claude_cache_models=23
+bad_ratio_count=0
+fatal_startup_errors=0
+```
+
+account `1910` 已在同一数据库事务中：
+
+- 把 `credentials.base_url` 改为 `http://kiro-go-pr131:8321`；
+- 删除五个 `equivalent_cache_billing_*` Extra；
+- 写入 `cache_ttl_override_enabled=false`；
+- 插入 `scheduler_outbox` 的 `account_changed` 事件 `372598`；
+- 因 Kiro 上游账户池为空，继续保持 `schedulable=false`。
+
+migration 174 的八个历史列仍全部存在。以部署前完整快照比较，只有
+`kiro-go-pr131` 和 `sub2api` 的启动时间与镜像发生变化，无关容器没有新增、
+丢失或重建。
+
+毕业机再次执行：
+
+```bash
+go test ./internal/service \
+  -run '(Pricing|EquivalentCacheCleanup|ClaudeFlat渠道|ClaudeInterval渠道)' \
+  -count=1
+```
+
+结果为 `ok`。
+
+Sub2API 的 `go test -race ./...` 尚未在 Linux 毕业机执行。本次追加验证不能
+替代该证据；它继续作为生产变更前需要补齐或书面接受的验证项。
+
+真实同步和流式请求均已到达 Kiro-Go，但因 `accounts=0` 返回
+`503 No available accounts`。因此真实 usage、TTL 分布、换源和跨倍率扣费仍
+需在导入明确授权的 Kiro 上游账户后验收。
