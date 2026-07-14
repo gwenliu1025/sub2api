@@ -22,9 +22,10 @@ import (
 )
 
 var (
-	openAIModelDatePattern     = regexp.MustCompile(`-\d{8}$`)
-	openAIModelBasePattern     = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
-	openAIGPT54FallbackPricing = &LiteLLMModelPricing{
+	openAIModelDatePattern       = regexp.MustCompile(`-\d{8}$`)
+	openAIModelBasePattern       = regexp.MustCompile(`^(gpt-\d+(?:\.\d+)?)(?:-|$)`)
+	claudeModelDotVersionPattern = regexp.MustCompile(`^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)(.*)$`)
+	openAIGPT54FallbackPricing   = &LiteLLMModelPricing{
 		InputCostPerToken:               2.5e-06, // $2.5 per MTok
 		OutputCostPerToken:              1.5e-05, // $15 per MTok
 		CacheReadInputTokenCost:         2.5e-07, // $0.25 per MTok
@@ -667,7 +668,13 @@ func (s *PricingService) GetModelPricing(modelName string) *LiteLLMModelPricing 
 	// 3. 尝试模糊匹配（去掉版本号后缀）
 	// claude-opus-4-5-20251101 -> claude-opus-4.5
 	baseName := s.extractBaseName(lookupCandidates[0])
-	for key, pricing := range s.pricingData {
+	pricingKeys := make([]string, 0, len(s.pricingData))
+	for key := range s.pricingData {
+		pricingKeys = append(pricingKeys, key)
+	}
+	sort.Strings(pricingKeys)
+	for _, key := range pricingKeys {
+		pricing := s.pricingData[key]
 		keyBase := s.extractBaseName(strings.ToLower(key))
 		if keyBase == baseName {
 			return pricing
@@ -736,6 +743,13 @@ func normalizeModelNameForPricing(model string) string {
 	}
 
 	model = strings.TrimLeft(model, "/")
+	if segment := lastSegment(model); strings.HasPrefix(segment, "claude-") {
+		model = segment
+	}
+	if strings.HasPrefix(model, "claude-") {
+		model = strings.TrimSuffix(model, "-thinking")
+		model = claudeModelDotVersionPattern.ReplaceAllString(model, "$1-$2$3")
+	}
 	if canonical := canonicalizeOpenAIModelAliasSpelling(model); canonical != "" {
 		if canonical == "gpt-5.6" {
 			return "gpt-5.6-sol"
@@ -787,6 +801,7 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 	// 因子串关系误匹配 "claude-opus-4-7"（opus-4.7 系列）。
 	// 注意：原 map 实现存在 Go map 迭代随机性导致的同类 bug，此处改为有序切片修复。
 	families := []modelFamily{
+		{name: "opus-4.8", match: []string{"claude-opus-4-8", "claude-opus-4.8"}, pricing: []string{"claude-opus-4-8", "claude-opus-4.8", "claude-opus-4-7", "claude-opus-4-6"}},
 		{name: "opus-4.7", match: []string{"claude-opus-4-7", "claude-opus-4.7"}, pricing: []string{"claude-opus-4-7", "claude-opus-4.7", "claude-opus-4-6"}},
 		{name: "opus-4.6", match: []string{"claude-opus-4-6", "claude-opus-4.6"}},
 		{name: "opus-4.5", match: []string{"claude-opus-4-5", "claude-opus-4.5"}},
@@ -795,6 +810,7 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 		{name: "sonnet-4", match: []string{"claude-sonnet-4", "claude-3-5-sonnet"}},
 		{name: "sonnet-3.5", match: []string{"claude-3-5-sonnet", "claude-3.5-sonnet"}},
 		{name: "sonnet-3", match: []string{"claude-3-sonnet"}},
+		{name: "haiku-4.5", match: []string{"claude-haiku-4-5", "claude-haiku-4.5"}},
 		{name: "haiku-3.5", match: []string{"claude-3-5-haiku", "claude-3.5-haiku"}},
 		{name: "haiku-3", match: []string{"claude-3-haiku"}},
 	}
@@ -819,6 +835,8 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 		switch {
 		case strings.Contains(model, "opus"):
 			switch {
+			case strings.Contains(model, "4.8") || strings.Contains(model, "4-8"):
+				fallbackName = "opus-4.8"
 			case strings.Contains(model, "4.7") || strings.Contains(model, "4-7"):
 				fallbackName = "opus-4.7"
 			case strings.Contains(model, "4.6") || strings.Contains(model, "4-6"):
@@ -839,6 +857,8 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 			}
 		case strings.Contains(model, "haiku"):
 			switch {
+			case strings.Contains(model, "4.5") || strings.Contains(model, "4-5"):
+				fallbackName = "haiku-4.5"
 			case strings.Contains(model, "3-5") || strings.Contains(model, "3.5"):
 				fallbackName = "haiku-3.5"
 			default:
@@ -864,12 +884,21 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 	if lookups == nil {
 		lookups = matched.match
 	}
+	pricingKeys := make([]string, 0, len(s.pricingData))
+	for key := range s.pricingData {
+		pricingKeys = append(pricingKeys, key)
+	}
+	sort.Strings(pricingKeys)
 	for _, pattern := range lookups {
-		for key, pricing := range s.pricingData {
+		if pricing, ok := s.pricingData[pattern]; ok {
+			logger.LegacyPrintf("service.pricing", "[Pricing] Fuzzy matched %s -> %s", model, pattern)
+			return pricing
+		}
+		for _, key := range pricingKeys {
 			keyLower := strings.ToLower(key)
 			if strings.Contains(keyLower, pattern) {
 				logger.LegacyPrintf("service.pricing", "[Pricing] Fuzzy matched %s -> %s", model, key)
-				return pricing
+				return s.pricingData[key]
 			}
 		}
 	}

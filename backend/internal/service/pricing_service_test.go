@@ -313,6 +313,42 @@ func TestPricingService_BareGPT56AliasDeterministicallyUsesSol(t *testing.T) {
 	}
 }
 
+func TestPricingService_Claude点号版本精确匹配短横线价格键(t *testing.T) {
+	pricingSvc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+		"claude-3-haiku":   {InputCostPerToken: 0.25e-6, OutputCostPerToken: 1.25e-6},
+		"claude-haiku-4-5": {InputCostPerToken: 1e-6, OutputCostPerToken: 5e-6},
+		"claude-opus-4":    {InputCostPerToken: 15e-6, OutputCostPerToken: 75e-6},
+		"claude-opus-4-8":  {InputCostPerToken: 5e-6, OutputCostPerToken: 25e-6},
+	}}
+
+	tests := []struct {
+		model         string
+		wantInput     float64
+		wantOutput    float64
+		wantCanonical string
+	}{
+		{model: "claude-haiku-4-5", wantInput: 1e-6, wantOutput: 5e-6, wantCanonical: "claude-haiku-4-5"},
+		{model: "claude-haiku-4.5", wantInput: 1e-6, wantOutput: 5e-6, wantCanonical: "claude-haiku-4-5"},
+		{model: "claude-haiku-4.5-thinking", wantInput: 1e-6, wantOutput: 5e-6, wantCanonical: "claude-haiku-4-5"},
+		{model: "anthropic/claude-opus-4-8", wantInput: 5e-6, wantOutput: 25e-6, wantCanonical: "claude-opus-4-8"},
+		{model: "anthropic/claude-opus-4.8", wantInput: 5e-6, wantOutput: 25e-6, wantCanonical: "claude-opus-4-8"},
+		{model: "anthropic/claude-opus-4.8-thinking", wantInput: 5e-6, wantOutput: 25e-6, wantCanonical: "claude-opus-4-8"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			require.Equal(t, tt.wantCanonical, normalizeModelNameForPricing(tt.model))
+
+			for i := 0; i < 100; i++ {
+				pricing := pricingSvc.GetModelPricing(tt.model)
+				require.NotNil(t, pricing)
+				require.InDelta(t, tt.wantInput, pricing.InputCostPerToken, 1e-12, "iteration=%d", i)
+				require.InDelta(t, tt.wantOutput, pricing.OutputCostPerToken, 1e-12, "iteration=%d", i)
+			}
+		})
+	}
+}
+
 func TestDefaultPricingIncludesOfficialGPT56Rates(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "resources", "model-pricing", "model_prices_and_context_window.json"))
 	require.NoError(t, err)
