@@ -207,15 +207,9 @@ describe('KeyUsageView daily detail', () => {
     wrapper.unmount()
   })
 
-  it('cancels queued ring animation callbacks when unmounted', async () => {
+  it('queries the current local calendar date near midnight', async () => {
     vi.useFakeTimers()
-    const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
-      return window.setTimeout(() => callback(0), 0)
-    })
-    vi.stubGlobal('cancelAnimationFrame', (frame: number) => {
-      window.clearTimeout(frame)
-    })
-    vi.stubGlobal('requestAnimationFrame', requestAnimationFrame)
+    vi.setSystemTime(new Date(2026, 6, 13, 0, 30))
 
     const wrapper = mount(KeyUsageView, {
       global: {
@@ -230,14 +224,11 @@ describe('KeyUsageView daily detail', () => {
     await wrapper.find('input').setValue('sk-test-key')
     await wrapper.find('input').trigger('keydown.enter')
     await flushPromises()
-    await nextTick()
-    await nextTick()
-    expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(0)
+
+    const requestUrl = String(vi.mocked(fetch).mock.calls[0][0])
+    expect(requestUrl).toContain('start_date=2026-07-13')
+    expect(requestUrl).toContain('end_date=2026-07-13')
 
     wrapper.unmount()
-    await vi.advanceTimersByTimeAsync(100)
-
-    expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
   })
 })
