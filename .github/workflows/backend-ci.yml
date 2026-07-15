@@ -8,21 +8,19 @@ permissions:
   contents: read
 
 jobs:
-  release-policy:
-    runs-on: ubuntu-latest
+  shell:
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
-      - name: Release policy checks
+      - name: Check deployment scripts
         run: |
-          .github/scripts/test-validate-release-version.sh
-          .github/scripts/test-release-policy.sh
+          /bin/bash -n deploy/apple-container.sh
+          /bin/bash deploy/tests/apple-container-test.sh
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Python updater tests
-        run: python3 -m unittest discover -s deploy/updater/tests -v
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod

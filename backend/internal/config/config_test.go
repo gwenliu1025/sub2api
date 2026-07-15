@@ -17,178 +17,21 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
-func TestLoadDefaultUpdateRepo(t *testing.T) {
-	resetViperWithJWTSecret(t)
+func TestLoadServerTimingConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.False(t, cfg.Server.EnableServerTiming)
+	})
 
-	cfg, err := Load()
-	require.NoError(t, err)
-	require.Equal(t, DefaultUpdateRepo, cfg.Update.Repo)
-}
-
-func TestLoadUpdateRepoFromEnv(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	t.Setenv("UPDATE_REPO", "gwenliu1025/sub2api-canary")
-
-	cfg, err := Load()
-	require.NoError(t, err)
-	require.Equal(t, "gwenliu1025/sub2api-canary", cfg.Update.Repo)
-}
-
-func TestLoadDefaultDockerUpdateConfig(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-	require.Equal(t, UpdateModeBinary, cfg.Update.Mode)
-	require.Equal(t, "/run/sub2api-updater/updater.sock", cfg.Update.AgentSocket)
-	require.Equal(t, 600, cfg.Update.AgentTimeoutSeconds)
-	require.Equal(t, "ghcr.io/gwenliu1025/sub2api", cfg.Update.ImageRepository)
-}
-
-func TestLoadDockerUpdateConfigFromEnv(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	t.Setenv("UPDATE_MODE", "docker_agent")
-	t.Setenv("UPDATE_AGENT_SOCKET", "/run/custom/updater.sock")
-	t.Setenv("UPDATE_AGENT_TIMEOUT_SECONDS", "900")
-	t.Setenv("UPDATE_IMAGE_REPOSITORY", "ghcr.io/gwenliu1025/sub2api-canary")
-
-	cfg, err := Load()
-	require.NoError(t, err)
-	require.Equal(t, UpdateModeDockerAgent, cfg.Update.Mode)
-	require.Equal(t, "/run/custom/updater.sock", cfg.Update.AgentSocket)
-	require.Equal(t, 900, cfg.Update.AgentTimeoutSeconds)
-	require.Equal(t, "ghcr.io/gwenliu1025/sub2api-canary", cfg.Update.ImageRepository)
-}
-
-func TestValidateDockerUpdateConfig(t *testing.T) {
-	tests := []struct {
-		name    string
-		mutate  func(*Config)
-		wantErr string
-	}{
-		{
-			name: "unsupported mode",
-			mutate: func(cfg *Config) {
-				cfg.Update.Mode = "docker"
-			},
-			wantErr: "update.mode",
-		},
-		{
-			name: "relative agent socket",
-			mutate: func(cfg *Config) {
-				cfg.Update.Mode = UpdateModeDockerAgent
-				cfg.Update.AgentSocket = "run/sub2api-updater/updater.sock"
-			},
-			wantErr: "update.agent_socket",
-		},
-		{
-			name: "zero agent timeout",
-			mutate: func(cfg *Config) {
-				cfg.Update.Mode = UpdateModeDockerAgent
-				cfg.Update.AgentTimeoutSeconds = 0
-			},
-			wantErr: "update.agent_timeout_seconds",
-		},
-		{
-			name: "tagged image repository",
-			mutate: func(cfg *Config) {
-				cfg.Update.Mode = UpdateModeDockerAgent
-				cfg.Update.ImageRepository = "ghcr.io/gwenliu1025/sub2api:latest"
-			},
-			wantErr: "update.image_repository",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resetViperWithJWTSecret(t)
-
-			cfg, err := Load()
-			require.NoError(t, err)
-			tt.mutate(cfg)
-
-			err = cfg.Validate()
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.wantErr)
-		})
-	}
-}
-
-func TestValidateBinaryUpdateModeIgnoresDockerAgentSettings(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Update.Mode = UpdateModeBinary
-	cfg.Update.AgentSocket = "relative.sock"
-	cfg.Update.AgentTimeoutSeconds = 0
-	cfg.Update.ImageRepository = "invalid:tag"
-
-	require.NoError(t, cfg.Validate())
-}
-
-func TestValidateUpdateRepoBlankFallsBackToDefault(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Update.Repo = "  "
-	require.NoError(t, cfg.Validate())
-	require.Equal(t, DefaultUpdateRepo, cfg.Update.Repo)
-}
-
-func TestValidateUpdateRepoRejectsURL(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Update.Repo = "https://github.com/gwenliu1025/sub2api"
-	err = cfg.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "update.repo")
-	require.Contains(t, err.Error(), "owner/repo")
-}
-
-func TestValidateUpdateRepoRejectsPathTraversal(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Update.Repo = "../sub2api"
-	err = cfg.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "update.repo")
-	require.Contains(t, err.Error(), "owner/repo")
-}
-
-func TestValidateUpdateRepoRejectsInvalidOwner(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Update.Repo = "bad_owner/sub2api"
-	err = cfg.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "update.repo")
-	require.Contains(t, err.Error(), "owner/repo")
-}
-
-func TestValidateUpdateRepoRejectsWhitespaceInsideSlug(t *testing.T) {
-	resetViperWithJWTSecret(t)
-
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Update.Repo = "gwenliu1025 /sub2api"
-	err = cfg.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "update.repo")
-	require.Contains(t, err.Error(), "owner/repo")
+	t.Run("enabled by exact environment variable", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		t.Setenv("ENABLE_SERVER_TIMING", "true")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.Server.EnableServerTiming)
+	})
 }
 
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
@@ -253,6 +96,34 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	if cfg.Gateway.Scheduling.SlotCleanupInterval != 30*time.Second {
 		t.Fatalf("SlotCleanupInterval = %v, want 30s", cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}
+}
+
+func TestLoadDefaultOpenAIFirstOutputTimeoutsDisabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Zero(t, cfg.Gateway.OpenAIFirstOutputTimeoutSeconds)
+	require.Zero(t, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
+}
+
+func TestLoadOpenAIFirstOutputTimeoutsFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_FIRST_OUTPUT_TIMEOUT_SECONDS", "90")
+	t.Setenv("GATEWAY_OPENAI_HIGH_EFFORT_FIRST_OUTPUT_TIMEOUT_SECONDS", "240")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 90, cfg.Gateway.OpenAIFirstOutputTimeoutSeconds)
+	require.Equal(t, 240, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
+}
+
+func TestValidateOpenAIFirstOutputTimeoutMinimum(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 30
+	require.NoError(t, cfg.Validate())
 }
 
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
@@ -356,6 +227,28 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIWS.IngressModeDefault != "ctx_pool" {
 		t.Fatalf("Gateway.OpenAIWS.IngressModeDefault = %q, want %q", cfg.Gateway.OpenAIWS.IngressModeDefault, "ctx_pool")
 	}
+	if cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds != DefaultOpenAIWSClientFirstMessageTimeoutSeconds {
+		t.Fatalf(
+			"Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds = %d, want %d",
+			cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds,
+			DefaultOpenAIWSClientFirstMessageTimeoutSeconds,
+		)
+	}
+	if cfg.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds != 300 {
+		t.Fatalf("Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds = %d, want 300", cfg.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds)
+	}
+	if cfg.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey != 64 {
+		t.Fatalf("Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey = %d, want 64", cfg.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey)
+	}
+}
+
+func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_WS_CLIENT_FIRST_MESSAGE_TIMEOUT_SECONDS", "120")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
 }
 
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {
@@ -408,6 +301,15 @@ func TestLoadOpenAIResponseHeaderTimeoutFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 1800, cfg.Gateway.OpenAIResponseHeaderTimeout)
+}
+
+func TestLoadImageNonstreamKeepaliveFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_IMAGE_NONSTREAM_KEEPALIVE_INTERVAL", "15")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 15, cfg.Gateway.ImageNonstreamKeepaliveInterval)
 }
 
 func TestLoadOpenAIWSStickyTTLCompatibility(t *testing.T) {
@@ -1491,6 +1393,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.openai_response_header_timeout",
 		},
 		{
+			name:    "gateway openai first output timeout below minimum",
+			mutate:  func(c *Config) { c.Gateway.OpenAIFirstOutputTimeoutSeconds = 29 },
+			wantErr: "gateway.openai_first_output_timeout_seconds",
+		},
+		{
+			name:    "gateway openai high effort first output timeout too large",
+			mutate:  func(c *Config) { c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds = 1801 },
+			wantErr: "gateway.openai_high_effort_first_output_timeout_seconds",
+		},
+		{
 			name:    "gateway max idle conns",
 			mutate:  func(c *Config) { c.Gateway.MaxIdleConns = 0 },
 			wantErr: "gateway.max_idle_conns",
@@ -1579,6 +1491,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway image stream keepalive negative",
 			mutate:  func(c *Config) { c.Gateway.ImageStreamKeepaliveInterval = -1 },
 			wantErr: "gateway.image_stream_keepalive_interval must be non-negative",
+		},
+		{
+			name:    "gateway image nonstream keepalive range",
+			mutate:  func(c *Config) { c.Gateway.ImageNonstreamKeepaliveInterval = 4 },
+			wantErr: "gateway.image_nonstream_keepalive_interval",
+		},
+		{
+			name:    "gateway image nonstream keepalive negative",
+			mutate:  func(c *Config) { c.Gateway.ImageNonstreamKeepaliveInterval = -1 },
+			wantErr: "gateway.image_nonstream_keepalive_interval must be non-negative",
 		},
 		{
 			name:    "gateway image stream data interval range",
@@ -1813,6 +1735,26 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			name:    "max_conns_per_account 必须为正数",
 			mutate:  func(c *Config) { c.Gateway.OpenAIWS.MaxConnsPerAccount = 0 },
 			wantErr: "gateway.openai_ws.max_conns_per_account",
+		},
+		{
+			name:    "client_first_message_timeout_seconds 必须为正数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds = 0 },
+			wantErr: "gateway.openai_ws.client_first_message_timeout_seconds",
+		},
+		{
+			name:    "client_first_message_timeout_seconds 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds = -1 },
+			wantErr: "gateway.openai_ws.client_first_message_timeout_seconds",
+		},
+		{
+			name:    "ingress_inter_turn_idle_timeout_seconds 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds = -1 },
+			wantErr: "gateway.openai_ws.ingress_inter_turn_idle_timeout_seconds",
+		},
+		{
+			name:    "max_ingress_connections_per_api_key 不能为负数",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey = -1 },
+			wantErr: "gateway.openai_ws.max_ingress_connections_per_api_key",
 		},
 		{
 			name:    "min_idle_per_account 不能为负数",
@@ -2137,6 +2079,9 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	}
 	if cfg.Gateway.ImageStreamKeepaliveInterval != 10 {
 		t.Fatalf("image_stream_keepalive_interval = %d, want 10", cfg.Gateway.ImageStreamKeepaliveInterval)
+	}
+	if cfg.Gateway.ImageNonstreamKeepaliveInterval != 0 {
+		t.Fatalf("image_nonstream_keepalive_interval = %d, want 0", cfg.Gateway.ImageNonstreamKeepaliveInterval)
 	}
 	if cfg.Gateway.ImageConcurrency.Enabled {
 		t.Fatalf("image_concurrency.enabled = true, want false")
