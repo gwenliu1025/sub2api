@@ -77,30 +77,6 @@ func (UsageLog) Fields() []ent.Field {
 			Default(0),
 		field.Int("cache_creation_1h_tokens").
 			Default(0),
-		field.Int("raw_input_tokens").
-			Optional().
-			Nillable(),
-		field.Int("raw_output_tokens").
-			Optional().
-			Nillable(),
-		field.Int("raw_cache_read_tokens").
-			Optional().
-			Nillable(),
-		field.Int("raw_cache_creation_tokens").
-			Optional().
-			Nillable(),
-		field.Int("raw_cache_creation_5m_tokens").
-			Optional().
-			Nillable(),
-		field.Int("raw_cache_creation_1h_tokens").
-			Optional().
-			Nillable(),
-		field.Int16("usage_allocation_version").
-			Optional().
-			Nillable(),
-		field.Int16("usage_allocation_kind").
-			Optional().
-			Nillable(),
 
 		// 成本字段
 		field.Float("input_cost").

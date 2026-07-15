@@ -61,22 +61,6 @@ type UsageLog struct {
 	CacheCreation5mTokens int `json:"cache_creation_5m_tokens,omitempty"`
 	// CacheCreation1hTokens holds the value of the "cache_creation_1h_tokens" field.
 	CacheCreation1hTokens int `json:"cache_creation_1h_tokens,omitempty"`
-	// RawInputTokens holds the value of the "raw_input_tokens" field.
-	RawInputTokens *int `json:"raw_input_tokens,omitempty"`
-	// RawOutputTokens holds the value of the "raw_output_tokens" field.
-	RawOutputTokens *int `json:"raw_output_tokens,omitempty"`
-	// RawCacheReadTokens holds the value of the "raw_cache_read_tokens" field.
-	RawCacheReadTokens *int `json:"raw_cache_read_tokens,omitempty"`
-	// RawCacheCreationTokens holds the value of the "raw_cache_creation_tokens" field.
-	RawCacheCreationTokens *int `json:"raw_cache_creation_tokens,omitempty"`
-	// RawCacheCreation5mTokens holds the value of the "raw_cache_creation_5m_tokens" field.
-	RawCacheCreation5mTokens *int `json:"raw_cache_creation_5m_tokens,omitempty"`
-	// RawCacheCreation1hTokens holds the value of the "raw_cache_creation_1h_tokens" field.
-	RawCacheCreation1hTokens *int `json:"raw_cache_creation_1h_tokens,omitempty"`
-	// UsageAllocationVersion holds the value of the "usage_allocation_version" field.
-	UsageAllocationVersion *int16 `json:"usage_allocation_version,omitempty"`
-	// UsageAllocationKind holds the value of the "usage_allocation_kind" field.
-	UsageAllocationKind *int16 `json:"usage_allocation_kind,omitempty"`
 	// InputCost holds the value of the "input_cost" field.
 	InputCost float64 `json:"input_cost,omitempty"`
 	// OutputCost holds the value of the "output_cost" field.
@@ -218,7 +202,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldRawInputTokens, usagelog.FieldRawOutputTokens, usagelog.FieldRawCacheReadTokens, usagelog.FieldRawCacheCreationTokens, usagelog.FieldRawCacheCreation5mTokens, usagelog.FieldRawCacheCreation1hTokens, usagelog.FieldUsageAllocationVersion, usagelog.FieldUsageAllocationKind, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
+		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
@@ -366,62 +350,6 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field cache_creation_1h_tokens", values[i])
 			} else if value.Valid {
 				_m.CacheCreation1hTokens = int(value.Int64)
-			}
-		case usagelog.FieldRawInputTokens:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field raw_input_tokens", values[i])
-			} else if value.Valid {
-				_m.RawInputTokens = new(int)
-				*_m.RawInputTokens = int(value.Int64)
-			}
-		case usagelog.FieldRawOutputTokens:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field raw_output_tokens", values[i])
-			} else if value.Valid {
-				_m.RawOutputTokens = new(int)
-				*_m.RawOutputTokens = int(value.Int64)
-			}
-		case usagelog.FieldRawCacheReadTokens:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field raw_cache_read_tokens", values[i])
-			} else if value.Valid {
-				_m.RawCacheReadTokens = new(int)
-				*_m.RawCacheReadTokens = int(value.Int64)
-			}
-		case usagelog.FieldRawCacheCreationTokens:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field raw_cache_creation_tokens", values[i])
-			} else if value.Valid {
-				_m.RawCacheCreationTokens = new(int)
-				*_m.RawCacheCreationTokens = int(value.Int64)
-			}
-		case usagelog.FieldRawCacheCreation5mTokens:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field raw_cache_creation_5m_tokens", values[i])
-			} else if value.Valid {
-				_m.RawCacheCreation5mTokens = new(int)
-				*_m.RawCacheCreation5mTokens = int(value.Int64)
-			}
-		case usagelog.FieldRawCacheCreation1hTokens:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field raw_cache_creation_1h_tokens", values[i])
-			} else if value.Valid {
-				_m.RawCacheCreation1hTokens = new(int)
-				*_m.RawCacheCreation1hTokens = int(value.Int64)
-			}
-		case usagelog.FieldUsageAllocationVersion:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field usage_allocation_version", values[i])
-			} else if value.Valid {
-				_m.UsageAllocationVersion = new(int16)
-				*_m.UsageAllocationVersion = int16(value.Int64)
-			}
-		case usagelog.FieldUsageAllocationKind:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field usage_allocation_kind", values[i])
-			} else if value.Valid {
-				_m.UsageAllocationKind = new(int16)
-				*_m.UsageAllocationKind = int16(value.Int64)
 			}
 		case usagelog.FieldInputCost:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -725,46 +653,6 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("cache_creation_1h_tokens=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CacheCreation1hTokens))
-	builder.WriteString(", ")
-	if v := _m.RawInputTokens; v != nil {
-		builder.WriteString("raw_input_tokens=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.RawOutputTokens; v != nil {
-		builder.WriteString("raw_output_tokens=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.RawCacheReadTokens; v != nil {
-		builder.WriteString("raw_cache_read_tokens=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.RawCacheCreationTokens; v != nil {
-		builder.WriteString("raw_cache_creation_tokens=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.RawCacheCreation5mTokens; v != nil {
-		builder.WriteString("raw_cache_creation_5m_tokens=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.RawCacheCreation1hTokens; v != nil {
-		builder.WriteString("raw_cache_creation_1h_tokens=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.UsageAllocationVersion; v != nil {
-		builder.WriteString("usage_allocation_version=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.UsageAllocationKind; v != nil {
-		builder.WriteString("usage_allocation_kind=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
 	builder.WriteString(", ")
 	builder.WriteString("input_cost=")
 	builder.WriteString(fmt.Sprintf("%v", _m.InputCost))
