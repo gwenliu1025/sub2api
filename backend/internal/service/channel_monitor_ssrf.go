@@ -93,8 +93,7 @@ func isPrivateOrLoopbackHost(ctx context.Context, hostname string) (bool, error)
 	if ip := net.ParseIP(hostname); ip != nil {
 		return isPrivateIP(ip), nil
 	}
-	resolver := net.DefaultResolver
-	addrs, err := resolver.LookupIPAddr(ctx, hostname)
+	addrs, err := lookupMonitorDialIPs(ctx, hostname)
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +101,7 @@ func isPrivateOrLoopbackHost(ctx context.Context, hostname string) (bool, error)
 		return true, nil
 	}
 	for _, a := range addrs {
-		if isPrivateIP(a.IP) {
+		if isPrivateIP(a) {
 			return true, nil
 		}
 	}
@@ -121,12 +120,12 @@ func safeDialContext(ctx context.Context, network, address string) (net.Conn, er
 		if isPrivateIP(ip) {
 			return nil, &net.AddrError{Err: "blocked by SSRF policy", Addr: address}
 		}
-		return monitorDialer.DialContext(ctx, network, address)
+		return monitorDialer.DialContext(ctx, monitorDialNetwork(network, ip), address)
 	}
 	if isBlockedHostname(host) {
 		return nil, &net.AddrError{Err: "blocked by SSRF policy", Addr: address}
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	addrs, err := lookupMonitorDialIPs(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -135,11 +134,11 @@ func safeDialContext(ctx context.Context, network, address string) (net.Conn, er
 	}
 	var lastErr error
 	for _, a := range addrs {
-		if isPrivateIP(a.IP) {
-			lastErr = &net.AddrError{Err: "blocked by SSRF policy", Addr: a.IP.String()}
+		if isPrivateIP(a) {
+			lastErr = &net.AddrError{Err: "blocked by SSRF policy", Addr: a.String()}
 			continue
 		}
-		conn, err := monitorDialer.DialContext(ctx, network, net.JoinHostPort(a.IP.String(), port))
+		conn, err := monitorDialer.DialContext(ctx, monitorDialNetwork(network, a), net.JoinHostPort(a.String(), port))
 		if err == nil {
 			return conn, nil
 		}
@@ -149,4 +148,48 @@ func safeDialContext(ctx context.Context, network, address string) (net.Conn, er
 		lastErr = &net.AddrError{Err: "no usable addresses", Addr: host}
 	}
 	return nil, lastErr
+}
+
+func lookupMonitorDialIPs(ctx context.Context, host string) ([]net.IP, error) {
+	var ips []net.IP
+	var firstErr error
+	for _, network := range []string{"ip4", "ip6"} {
+		resolved, err := net.DefaultResolver.LookupIP(ctx, network, host)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		ips = append(ips, resolved...)
+	}
+	if len(ips) > 0 {
+		return preferMonitorDialIPs(ips), nil
+	}
+	return nil, firstErr
+}
+
+func preferMonitorDialIPs(ips []net.IP) []net.IP {
+	out := make([]net.IP, 0, len(ips))
+	for _, ip := range ips {
+		if ip != nil && ip.To4() != nil {
+			out = append(out, ip)
+		}
+	}
+	for _, ip := range ips {
+		if ip != nil && ip.To4() == nil {
+			out = append(out, ip)
+		}
+	}
+	return out
+}
+
+func monitorDialNetwork(network string, ip net.IP) string {
+	if strings.HasPrefix(network, "tcp") {
+		if ip.To4() != nil {
+			return "tcp4"
+		}
+		return "tcp6"
+	}
+	return network
 }

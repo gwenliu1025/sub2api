@@ -1676,6 +1676,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if requestModel == "" {
 		requestModel = "gpt-image-2"
 	}
+	if isXAIImagineImageModel(requestModel) {
+		return nil, fmt.Errorf("xAI Imagine image models require OpenAI-compatible API-key accounts")
+	}
 	if err := validateOpenAIImagesModel(requestModel); err != nil {
 		return nil, err
 	}

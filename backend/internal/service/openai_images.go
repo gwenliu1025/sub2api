@@ -45,9 +45,15 @@ const (
 type OpenAIImagesCapability string
 
 const (
-	OpenAIImagesCapabilityBasic  OpenAIImagesCapability = "images-basic"
-	OpenAIImagesCapabilityNative OpenAIImagesCapability = "images-native"
+	OpenAIImagesCapabilityBasic        OpenAIImagesCapability = "images-basic"
+	OpenAIImagesCapabilityNative       OpenAIImagesCapability = "images-native"
+	OpenAIImagesCapabilityAPIKeyNative OpenAIImagesCapability = "images-apikey-native"
 )
+
+var xaiImagineImageModels = map[string]struct{}{
+	"grok-imagine-image":         {},
+	"grok-imagine-image-quality": {},
+}
 
 type OpenAIImagesUpload struct {
 	FieldName   string
@@ -471,9 +477,18 @@ func isGrokImageGenerationModel(model string) bool {
 		strings.HasPrefix(model, "grok-imagine-image")
 }
 
+func isXAIImagineImageModel(model string) bool {
+	_, ok := xaiImagineImageModels[strings.ToLower(strings.TrimSpace(model))]
+	return ok
+}
+
+func isSupportedImageGenerationModel(model string) bool {
+	return isOpenAIImageGenerationModel(model) || isXAIImagineImageModel(model)
+}
+
 func validateOpenAIImagesModel(model string) error {
 	model = strings.TrimSpace(model)
-	if isOpenAIImageGenerationModel(model) {
+	if isSupportedImageGenerationModel(model) {
 		return nil
 	}
 	if model == "" {
@@ -497,6 +512,10 @@ func normalizeOpenAIImagesEndpointPath(path string) string {
 func classifyOpenAIImagesCapability(req *OpenAIImagesRequest) OpenAIImagesCapability {
 	if req == nil {
 		return OpenAIImagesCapabilityNative
+	}
+	if isXAIImagineImageModel(req.Model) {
+		// xAI Imagine is exposed through OpenAI-compatible API-key upstreams, not ChatGPT OAuth.
+		return OpenAIImagesCapabilityAPIKeyNative
 	}
 	if req.ExplicitModel || req.ExplicitSize {
 		return OpenAIImagesCapabilityNative
