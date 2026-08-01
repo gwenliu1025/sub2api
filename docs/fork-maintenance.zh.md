@@ -7,14 +7,20 @@
 - 生产基线：`f0c79a2ce5664ba5e4252e8184a400b59b2c574c`，正式版本仍为 `v0.1.169`。
 - 修复分支：`fix/anthropic-accept-encoding`，在后续官方版本整合完成前必须保留。
 - 修复提交：`146789daf37f98e24a343efd12f5cad10bd3c4ce`。
-- 生产镜像：`ghcr.io/gwenliu1025/sub2api:0.1.169-anthropic-accept-encoding-146789daf`。
-- 镜像 ID：`sha256:573020e564600f17b2da79d5ee74290250793cf83ab8331b8f20cb14cc70654c`。
-- 生产切换时间：`2026-08-02 02:43:54 +08`。
-- 生产备份：`/home/ubuntu/sub2api/backups/pre-anthropic-accept-encoding-20260801T184343Z`。
+- 生产镜像：`ghcr.io/gwenliu1025/sub2api:0.1.169-anthropic-accept-encoding-146789daf-r2`。
+- 镜像 ID：`sha256:01bbd5285b6e16e591d6f94a432e9743fc6296e6fdfe9462e9a2586ab92a7c58`。
+- 生产切换时间：`2026-08-02 03:21:54 +08`。
+- 生产备份：`/home/ubuntu/sub2api/backups/pre-anthropic-accept-encoding-r2-20260801T192143Z`。
 
 该镜像使用自定义后缀，仅作为当前 `0.1.169` 生产热修复，不是正式 Release；本次没有修改
 `backend/cmd/server/VERSION`，也没有创建或移动 Git tag、GitHub Release、正式 GHCR 资产或
 `checksums.txt`。
+
+首次镜像错误使用 `backend/Dockerfile`，未构建前端且未带 `-tags embed`，部署后公网根页面返回
+`404 page not found`。该镜像
+`ghcr.io/gwenliu1025/sub2api:0.1.169-anthropic-accept-encoding-146789daf` 已回滚并禁止复用。
+`-r2` 使用仓库根多阶段 `Dockerfile` 构建，内嵌前端、正式入口、资源目录和公网根页面
+`200 + HTML` 均已验证。
 
 ## 根因与修复边界
 
@@ -34,8 +40,8 @@ Go `http.Transport` 自动添加的 `Accept-Encoding: gzip` 会在真实请求�
 - `go vet ./...` 通过。
 - 全量测试仍存在生产基线已有的
   `TestContentModerationRuntimeSnapshotRefreshFailureKeepsStaleConfig` 时序失败，与本修复无关；未修改该测试。
-- 生产容器为 `running/healthy`；应用直连、Caddy、公网和更新代理健康检查均为 `200`；未认证
-  `/v1/models` 为预期的 `401`；其他容器启动时间未变化。
+- 生产容器为 `running/healthy`；公网根页面为 `200` 且正文是 HTML；应用直连、Caddy、公网和
+  更新代理健康检查均为 `200`；未认证 `/v1/models` 为预期的 `401`；其他容器启动时间未变化。
 - 禾维、cctest、ztest 的真实评分复测需要用户侧低额度临时 Key，当前未伪记为已完成。
 
 ## 回滚
@@ -45,7 +51,7 @@ Go `http.Transport` 自动添加的 `Accept-Encoding: gzip` 会在真实请求�
 
 ```bash
 cp -a \
-  /home/ubuntu/sub2api/backups/pre-anthropic-accept-encoding-20260801T184343Z/.env \
+  /home/ubuntu/sub2api/backups/pre-anthropic-accept-encoding-r2-20260801T192143Z/.env \
   /home/ubuntu/sub2api/.env
 docker compose \
   --project-directory /home/ubuntu/sub2api \
