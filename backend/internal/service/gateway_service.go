@@ -439,10 +439,12 @@ var allowedHeaders = map[string]bool{
 	"sec-fetch-mode":                            true,
 	"user-agent":                                true,
 	"content-type":                              true,
-	"accept-encoding":                           true,
 	"x-claude-code-session-id":                  true,
 	"x-client-request-id":                       true,
 }
+
+// accept-encoding 有意不进入 Anthropic 上游请求白名单。
+// Go Transport 应统一负责压缩协商和 gzip 解压，避免客户端原始头与自动协商头重复。
 
 // GatewayCache 定义网关服务的缓存操作接口。
 // 提供粘性会话（Sticky Session）的存储、查询、刷新和删除功能。
