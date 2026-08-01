@@ -11,6 +11,8 @@ export interface ReleaseInfo {
   html_url: string
 }
 
+export type UpdateMode = 'binary' | 'docker_agent'
+
 export interface VersionInfo {
   current_version: string
   latest_version: string
@@ -19,6 +21,7 @@ export interface VersionInfo {
   cached: boolean
   warning?: string
   build_type: string // "source" for manual builds, "release" for CI builds
+  update_mode?: UpdateMode
 }
 
 /**
@@ -40,9 +43,35 @@ export async function checkUpdates(force = false): Promise<VersionInfo> {
   return data
 }
 
+export type UpdateAgentState =
+  | 'idle'
+  | 'preparing'
+  | 'prepared'
+  | 'activating'
+  | 'healthy'
+  | 'rolled_back'
+  | 'failed'
+  | 'rollback_failed'
+
+export interface UpdateAgentStatus {
+  state: UpdateAgentState
+  current_image: string
+  target_image: string
+  previous_image: string
+  message: string
+  updated_at: string
+}
+
 export interface UpdateResult {
   message: string
   need_restart: boolean
+  update_mode?: UpdateMode
+  status?: UpdateAgentStatus
+}
+
+export async function getUpdateStatus(): Promise<UpdateAgentStatus> {
+  const { data } = await apiClient.get<UpdateAgentStatus>('/admin/system/update-status')
+  return data
 }
 
 export interface RollbackVersionInfo {
@@ -96,14 +125,22 @@ export async function rollback(version?: string): Promise<UpdateResult> {
 /**
  * Restart the service
  */
-export async function restartService(): Promise<{ message: string }> {
-  const { data } = await apiClient.post<{ message: string }>('/admin/system/restart')
+export interface RestartResult {
+  message: string
+  update_mode?: UpdateMode
+  status?: UpdateAgentStatus
+  operation_id?: string
+}
+
+export async function restartService(): Promise<RestartResult> {
+  const { data } = await apiClient.post<RestartResult>('/admin/system/restart')
   return data
 }
 
 export const systemAPI = {
   getVersion,
   checkUpdates,
+  getUpdateStatus,
   performUpdate,
   getRollbackVersions,
   rollback,

@@ -107,10 +107,14 @@ FROM ${POSTGRES_IMAGE} AS pg-client
 # -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
 
+ARG VERSION=dev
+ARG OCI_SOURCE=https://github.com/gwenliu1025/sub2api
+
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
 LABEL description="Sub2API - AI API Gateway Platform"
-LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+LABEL org.opencontainers.image.source="${OCI_SOURCE}"
+LABEL org.opencontainers.image.version="${VERSION}"
 
 # Install runtime dependencies
 RUN apk add --no-cache \

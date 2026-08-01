@@ -23,12 +23,22 @@ assert_count() {
   [ "$actual" -eq "$expected" ] || fail "$file has $actual occurrences of '$line', expected $expected"
 }
 
+assert_absent() {
+  file=$1
+  text=$2
+  if grep -Fq "$text" "$file"; then
+    fail "$file contains obsolete content: $text"
+  fi
+}
+
 test -s backend/resources/model-pricing/model_prices_and_context_window.json || \
   fail 'fallback pricing data is missing or empty'
 
-assert_line Dockerfile.goreleaser 'COPY --chown=sub2api:sub2api backend/resources /app/resources'
+assert_line Dockerfile 'COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources'
 assert_line deploy/Dockerfile 'COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources'
-assert_count .goreleaser.yaml '      - backend/resources' 4
-assert_count .goreleaser.simple.yaml '      - backend/resources' 1
+assert_absent .goreleaser.yaml 'dockers:'
+assert_absent .goreleaser.yaml 'docker_manifests:'
+test ! -e Dockerfile.goreleaser || fail 'obsolete Dockerfile.goreleaser must be removed'
+test ! -e .goreleaser.simple.yaml || fail 'obsolete .goreleaser.simple.yaml must be removed'
 
 printf 'docker runtime resources test passed\n'

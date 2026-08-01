@@ -10,6 +10,8 @@ import (
 	"net/textproto"
 	"net/url"
 	"os"
+	"path"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,6 +26,15 @@ const (
 )
 
 const DefaultUpdateRepo = "gwenliu1025/sub2api"
+
+const (
+	UpdateModeBinary             = "binary"
+	UpdateModeDockerAgent        = "docker_agent"
+	DefaultUpdateAgentSocket     = "/run/sub2api-updater/updater.sock"
+	DefaultUpdateImageRepository = "ghcr.io/gwenliu1025/sub2api"
+)
+
+var updateImageRepositoryPattern = regexp.MustCompile(`^ghcr\.io/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$`)
 
 // 使用量记录队列溢出策略
 const (
@@ -165,6 +176,11 @@ type UpdateConfig struct {
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
 	ProxyURL string `mapstructure:"proxy_url"`
+
+	Mode                string `mapstructure:"mode"`
+	AgentSocket         string `mapstructure:"agent_socket"`
+	AgentTimeoutSeconds int    `mapstructure:"agent_timeout_seconds"`
+	ImageRepository     string `mapstructure:"image_repository"`
 }
 
 type IdempotencyConfig struct {
@@ -2213,6 +2229,10 @@ func setDefaults() {
 	viper.SetDefault("pricing.update_interval_hours", 24)
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
 	viper.SetDefault("update.repo", DefaultUpdateRepo)
+	viper.SetDefault("update.mode", UpdateModeBinary)
+	viper.SetDefault("update.agent_socket", DefaultUpdateAgentSocket)
+	viper.SetDefault("update.agent_timeout_seconds", 600)
+	viper.SetDefault("update.image_repository", DefaultUpdateImageRepository)
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
@@ -2546,6 +2566,25 @@ func (c *Config) Validate() error {
 	c.Update.Repo = normalizeUpdateRepo(c.Update.Repo)
 	if err := validateGitHubRepoSlug("update.repo", c.Update.Repo); err != nil {
 		return err
+	}
+	c.Update.Mode = strings.ToLower(strings.TrimSpace(c.Update.Mode))
+	switch c.Update.Mode {
+	case UpdateModeBinary, UpdateModeDockerAgent:
+	default:
+		return fmt.Errorf("update.mode must be one of: %s/%s", UpdateModeBinary, UpdateModeDockerAgent)
+	}
+	if c.Update.Mode == UpdateModeDockerAgent {
+		c.Update.AgentSocket = strings.TrimSpace(c.Update.AgentSocket)
+		if !path.IsAbs(c.Update.AgentSocket) || path.Clean(c.Update.AgentSocket) != c.Update.AgentSocket {
+			return fmt.Errorf("update.agent_socket must be an absolute clean path")
+		}
+		if c.Update.AgentTimeoutSeconds < 1 || c.Update.AgentTimeoutSeconds > 3600 {
+			return fmt.Errorf("update.agent_timeout_seconds must be between 1 and 3600")
+		}
+		c.Update.ImageRepository = strings.TrimSpace(c.Update.ImageRepository)
+		if !updateImageRepositoryPattern.MatchString(c.Update.ImageRepository) {
+			return fmt.Errorf("update.image_repository must be an untagged ghcr.io owner/repository path")
+		}
 	}
 
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)

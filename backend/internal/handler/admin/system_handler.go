@@ -16,6 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var restartServiceAsync = sysutil.RestartServiceAsync
+
 // SystemHandler handles system-related operations
 type SystemHandler struct {
 	updateSvc systemUpdateService
@@ -46,6 +48,9 @@ func systemUpdateContext(ctx context.Context) (context.Context, context.CancelFu
 type systemUpdateService interface {
 	CheckUpdate(ctx context.Context, force bool) (*service.UpdateInfo, error)
 	PerformUpdate(ctx context.Context) error
+	UsesDockerAgent() bool
+	ActivatePreparedUpdate(ctx context.Context) (*service.UpdateAgentStatus, error)
+	GetUpdateStatus(ctx context.Context) (*service.UpdateAgentStatus, error)
 	Rollback() error
 	ListRollbackVersions(ctx context.Context) ([]service.RollbackVersion, error)
 	RollbackToVersion(ctx context.Context, version string) error
@@ -78,6 +83,17 @@ func (h *SystemHandler) CheckUpdates(c *gin.Context) {
 		return
 	}
 	response.Success(c, info)
+}
+
+// GetUpdateStatus 返回宿主机更新代理的当前状态。
+// GET /api/v1/admin/system/update-status
+func (h *SystemHandler) GetUpdateStatus(c *gin.Context) {
+	status, err := h.updateSvc.GetUpdateStatus(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, status)
 }
 
 // PerformUpdate downloads and applies the update
@@ -120,11 +136,19 @@ func (h *SystemHandler) PerformUpdate(c *gin.Context) {
 		}
 		succeeded = true
 
-		return gin.H{
+		result := gin.H{
 			"message":      "Update completed. Please restart the service.",
 			"need_restart": true,
 			"operation_id": lock.OperationID(),
-		}, nil
+		}
+		if h.updateSvc.UsesDockerAgent() {
+			result["message"] = "Update prepared. Please restart the service."
+			result["update_mode"] = "docker_agent"
+			if status, statusErr := h.updateSvc.GetUpdateStatus(updateCtx); statusErr == nil {
+				result["status"] = status
+			}
+		}
+		return result, nil
 	})
 }
 
@@ -213,16 +237,31 @@ func (h *SystemHandler) RestartService(c *gin.Context) {
 			release("", succeeded)
 		}()
 
+		if h.updateSvc.UsesDockerAgent() {
+			status, err := h.updateSvc.ActivatePreparedUpdate(ctx)
+			if err != nil {
+				return nil, err
+			}
+			succeeded = true
+			return gin.H{
+				"message":      "Image activation initiated",
+				"update_mode":  "docker_agent",
+				"status":       status,
+				"operation_id": lock.OperationID(),
+			}, nil
+		}
+
 		// Schedule service restart in background after sending response
 		// This ensures the client receives the success response before the service restarts
 		go func() {
 			// Wait a moment to ensure the response is sent
 			time.Sleep(500 * time.Millisecond)
-			sysutil.RestartServiceAsync()
+			restartServiceAsync()
 		}()
 		succeeded = true
 		return gin.H{
 			"message":      "Service restart initiated",
+			"update_mode":  "binary",
 			"operation_id": lock.OperationID(),
 		}, nil
 	})

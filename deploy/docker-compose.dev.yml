@@ -48,6 +48,8 @@ services:
       - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
       - TZ=${TZ:-Asia/Shanghai}
       - UPDATE_REPO=${UPDATE_REPO:-gwenliu1025/sub2api}
+      # 本地源码开发继续使用进程内二进制更新模式，不依赖宿主机更新代理。
+      - UPDATE_MODE=${UPDATE_MODE:-binary}
       # Local mainland-China development proxy. Containers cannot use
       # 127.0.0.1 for the host proxy, so default to Docker Desktop's host name.
       - HTTP_PROXY=${SUB2API_DEV_HTTP_PROXY:-http://host.docker.internal:7897}

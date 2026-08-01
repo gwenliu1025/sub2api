@@ -36,6 +36,30 @@ type updateServiceGitHubClientStub struct {
 	calls          int
 }
 
+type recordingUpdateAgentClient struct {
+	prepareStatus  *UpdateAgentStatus
+	activateStatus *UpdateAgentStatus
+	status         *UpdateAgentStatus
+	prepared       []string
+	activateCalls  int
+	statusCalls    int
+}
+
+func (c *recordingUpdateAgentClient) Prepare(_ context.Context, version string) (*UpdateAgentStatus, error) {
+	c.prepared = append(c.prepared, version)
+	return c.prepareStatus, nil
+}
+
+func (c *recordingUpdateAgentClient) Activate(context.Context) (*UpdateAgentStatus, error) {
+	c.activateCalls++
+	return c.activateStatus, nil
+}
+
+func (c *recordingUpdateAgentClient) Status(context.Context) (*UpdateAgentStatus, error) {
+	c.statusCalls++
+	return c.status, nil
+}
+
 func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
 	s.repo = repo
 	s.calls++
@@ -68,6 +92,8 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 		defaultGitHubRepo,
 		"0.1.132",
 		"release",
+		config.UpdateModeBinary,
+		nil,
 	)
 
 	err := svc.PerformUpdate(context.Background())
@@ -84,6 +110,8 @@ func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateSe
 		defaultGitHubRepo,
 		current,
 		"release",
+		config.UpdateModeBinary,
+		nil,
 	)
 }
 
@@ -147,6 +175,8 @@ func TestUpdateServiceListRollbackVersionsPropagatesFetchError(t *testing.T) {
 		defaultGitHubRepo,
 		"0.1.147",
 		"release",
+		config.UpdateModeBinary,
+		nil,
 	)
 
 	_, err := svc.ListRollbackVersions(context.Background())
@@ -159,7 +189,7 @@ func TestUpdateServiceUsesConfiguredRepo(t *testing.T) {
 	client := &updateServiceGitHubClientStub{
 		release: &GitHubRelease{TagName: "v0.1.170", Name: "v0.1.170"},
 	}
-	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api-canary", "0.1.169", "release")
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api-canary", "0.1.169", "release", config.UpdateModeBinary, nil)
 
 	info, err := svc.CheckUpdate(context.Background(), true)
 
@@ -173,7 +203,7 @@ func TestUpdateServiceRollbackListUsesConfiguredRepo(t *testing.T) {
 	client := &updateServiceGitHubClientStub{
 		recentReleases: []*GitHubRelease{{TagName: "v0.1.168"}},
 	}
-	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api-canary", "0.1.169", "release")
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api-canary", "0.1.169", "release", config.UpdateModeBinary, nil)
 
 	versions, err := svc.ListRollbackVersions(context.Background())
 
@@ -187,7 +217,7 @@ func TestUpdateServiceBlankRepoFallsBackToDefault(t *testing.T) {
 	client := &updateServiceGitHubClientStub{
 		release: &GitHubRelease{TagName: "v0.1.169", Name: "v0.1.169"},
 	}
-	svc := NewUpdateService(&updateServiceCacheStub{}, client, "  ", "0.1.169", "release")
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "  ", "0.1.169", "release", config.UpdateModeBinary, nil)
 
 	_, err := svc.CheckUpdate(context.Background(), true)
 
@@ -202,7 +232,7 @@ func TestUpdateServiceIgnoresCachedUpdateFromDifferentRepo(t *testing.T) {
 	client := &updateServiceGitHubClientStub{
 		release: &GitHubRelease{TagName: "v0.1.170", Name: "v0.1.170"},
 	}
-	svc := NewUpdateService(cache, client, "gwenliu1025/sub2api", "0.1.169", "release")
+	svc := NewUpdateService(cache, client, "gwenliu1025/sub2api", "0.1.169", "release", config.UpdateModeBinary, nil)
 
 	info, err := svc.CheckUpdate(context.Background(), false)
 
@@ -224,6 +254,85 @@ func TestProvideUpdateServiceUsesConfigRepo(t *testing.T) {
 	)
 
 	require.Equal(t, "gwenliu1025/sub2api-canary", svc.repo)
+}
+
+func TestUpdateServiceDockerAgentPreparesLatestVersion(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.170", Name: "v0.1.170"},
+	}
+	agent := &recordingUpdateAgentClient{prepareStatus: &UpdateAgentStatus{State: UpdateAgentPrepared}}
+	svc := NewUpdateService(
+		&updateServiceCacheStub{}, client, defaultGitHubRepo,
+		"0.1.169", "release", config.UpdateModeDockerAgent, agent,
+	)
+
+	err := svc.PerformUpdate(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"0.1.170"}, agent.prepared)
+}
+
+func TestUpdateServiceDockerAgentRollbackPreparesAllowedVersion(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		recentReleases: []*GitHubRelease{{TagName: "v0.1.168"}},
+	}
+	agent := &recordingUpdateAgentClient{prepareStatus: &UpdateAgentStatus{State: UpdateAgentPrepared}}
+	svc := NewUpdateService(
+		&updateServiceCacheStub{}, client, defaultGitHubRepo,
+		"0.1.169", "release", config.UpdateModeDockerAgent, agent,
+	)
+
+	err := svc.RollbackToVersion(context.Background(), "0.1.168")
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"0.1.168"}, agent.prepared)
+}
+
+func TestUpdateServiceDockerAgentRejectsLegacyBackupRollback(t *testing.T) {
+	svc := NewUpdateService(
+		&updateServiceCacheStub{}, &updateServiceGitHubClientStub{}, defaultGitHubRepo,
+		"0.1.169", "release", config.UpdateModeDockerAgent, &recordingUpdateAgentClient{},
+	)
+
+	err := svc.Rollback()
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "LEGACY_ROLLBACK_UNAVAILABLE")
+}
+
+func TestUpdateServiceDockerAgentActivateAndStatusDelegate(t *testing.T) {
+	activateStatus := &UpdateAgentStatus{State: UpdateAgentActivating}
+	currentStatus := &UpdateAgentStatus{State: UpdateAgentPrepared}
+	agent := &recordingUpdateAgentClient{activateStatus: activateStatus, status: currentStatus}
+	svc := NewUpdateService(
+		&updateServiceCacheStub{}, &updateServiceGitHubClientStub{}, defaultGitHubRepo,
+		"0.1.169", "release", config.UpdateModeDockerAgent, agent,
+	)
+
+	activated, err := svc.ActivatePreparedUpdate(context.Background())
+	require.NoError(t, err)
+	require.Same(t, activateStatus, activated)
+	status, err := svc.GetUpdateStatus(context.Background())
+	require.NoError(t, err)
+	require.Same(t, currentStatus, status)
+	require.Equal(t, 1, agent.activateCalls)
+	require.Equal(t, 1, agent.statusCalls)
+}
+
+func TestUpdateServiceDockerAgentCachedInfoIncludesMode(t *testing.T) {
+	cache := &updateServiceCacheStub{
+		data: `{"latest":"0.1.170","repo":"gwenliu1025/sub2api","timestamp":32503680000}`,
+	}
+	svc := NewUpdateService(
+		cache, &updateServiceGitHubClientStub{}, defaultGitHubRepo,
+		"0.1.169", "release", config.UpdateModeDockerAgent, &recordingUpdateAgentClient{},
+	)
+
+	info, err := svc.CheckUpdate(context.Background(), false)
+
+	require.NoError(t, err)
+	require.True(t, info.Cached)
+	require.Equal(t, config.UpdateModeDockerAgent, info.UpdateMode)
 }
 
 func TestUpdateServiceRollbackToVersionRejectsDisallowedTargets(t *testing.T) {

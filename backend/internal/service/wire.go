@@ -34,10 +34,20 @@ func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient)
 // ProvideUpdateService 使用配置和构建信息创建 UpdateService。
 func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, cfg *config.Config, buildInfo BuildInfo) *UpdateService {
 	repo := ""
+	mode := config.UpdateModeBinary
+	var agentClient UpdateAgentClient
 	if cfg != nil {
 		repo = cfg.Update.Repo
+		mode = cfg.Update.Mode
+		if mode == config.UpdateModeDockerAgent {
+			agentClient = NewUnixUpdateAgentClient(
+				cfg.Update.AgentSocket,
+				cfg.Update.ImageRepository,
+				time.Duration(cfg.Update.AgentTimeoutSeconds)*time.Second,
+			)
+		}
 	}
-	return NewUpdateService(cache, githubClient, repo, buildInfo.Version, buildInfo.BuildType)
+	return NewUpdateService(cache, githubClient, repo, buildInfo.Version, buildInfo.BuildType, mode, agentClient)
 }
 
 // ProvideEmailQueueService creates EmailQueueService with default worker count
