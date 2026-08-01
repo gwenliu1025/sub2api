@@ -42,6 +42,8 @@ require_file "$workflow"
 require_file "$goreleaser"
 require_file "$version_file"
 require_file ".github/scripts/validate-release-version.sh"
+require_contains ".github/workflows/backend-ci.yml" '.github/scripts/test-validate-release-version.sh'
+require_contains ".github/workflows/backend-ci.yml" '.github/scripts/test-release-policy.sh'
 
 require_exact_line "$version_file" "0.1.169"
 require_exact_line "deploy/.env.example" "SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.1.169"
@@ -59,6 +61,7 @@ require_contains "$workflow" 'COMMIT=${{ steps.revision.outputs.sha }}'
 require_contains "$workflow" 'OCI_SOURCE=https://github.com/${{ github.repository }}'
 require_contains "$workflow" 'GITHUB_REPO_NAME: ${{ github.event.repository.name }}'
 require_contains "$workflow" 'image="ghcr.io/${REPOSITORY,,}:$IMAGE_TAG"'
+require_contains "$workflow" 'Sub2API %s 已发布'
 require_contains "$workflow" 'update_version:'
 require_contains "$workflow" 'actions/upload-artifact@v7'
 require_absent "$workflow" 'git commit'
@@ -83,6 +86,8 @@ require_contains "$goreleaser" '      - arm64'
 require_contains "$goreleaser" 'goos: windows'
 require_contains "$goreleaser" 'format: zip'
 require_contains "$goreleaser" 'name_template: checksums.txt'
+require_contains "$goreleaser" '> AI API 网关平台'
+require_contains "$goreleaser" '## 文档'
 
 for compose in $compose_files; do
   require_contains "$compose" 'image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.1.169}'
