@@ -23,6 +23,8 @@ const (
 	RunModeSimple   = "simple"
 )
 
+const DefaultUpdateRepo = "gwenliu1025/sub2api"
+
 // 使用量记录队列溢出策略
 const (
 	UsageRecordOverflowPolicyDrop   = "drop"
@@ -156,6 +158,9 @@ type GeminiTierQuotaConfig struct {
 }
 
 type UpdateConfig struct {
+	// Repo 是管理端在线更新使用的 GitHub owner/repository 标识。
+	Repo string `mapstructure:"repo"`
+
 	// ProxyURL 用于访问 GitHub 的代理地址
 	// 支持 http/https/socks5/socks5h 协议
 	// 例如: "http://127.0.0.1:7890", "socks5://127.0.0.1:1080"
@@ -410,6 +415,67 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func normalizeUpdateRepo(repo string) string {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return DefaultUpdateRepo
+	}
+	return repo
+}
+
+func validateGitHubRepoSlug(field, repo string) error {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if strings.Contains(repo, "://") || strings.ContainsAny(repo, "\\?#") {
+		return fmt.Errorf("%s must be in owner/repo format", field)
+	}
+
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("%s must be in owner/repo format", field)
+	}
+	owner := strings.TrimSpace(parts[0])
+	name := strings.TrimSpace(parts[1])
+	if owner != parts[0] || name != parts[1] || !isGitHubOwnerSlug(owner) || !isGitHubRepoName(name) {
+		return fmt.Errorf("%s must be in owner/repo format", field)
+	}
+	return nil
+}
+
+func isGitHubOwnerSlug(owner string) bool {
+	if owner == "" || owner == "." || owner == ".." || strings.HasPrefix(owner, "-") || strings.HasSuffix(owner, "-") {
+		return false
+	}
+	for _, character := range owner {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isGitHubRepoName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, character := range name {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '-' || character == '_' || character == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func normalizeWeChatConnectMode(raw string) string {
@@ -2146,6 +2212,7 @@ func setDefaults() {
 	viper.SetDefault("pricing.fallback_file", "./resources/model-pricing/model_prices_and_context_window.json")
 	viper.SetDefault("pricing.update_interval_hours", 24)
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
+	viper.SetDefault("update.repo", DefaultUpdateRepo)
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
@@ -2476,6 +2543,11 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	c.Update.Repo = normalizeUpdateRepo(c.Update.Repo)
+	if err := validateGitHubRepoSlug("update.repo", c.Update.Repo); err != nil {
+		return err
+	}
+
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)

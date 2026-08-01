@@ -23,6 +23,58 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestLoadDefaultUpdateRepo(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, DefaultUpdateRepo, cfg.Update.Repo)
+}
+
+func TestLoadUpdateRepoFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("UPDATE_REPO", "gwenliu1025/sub2api-canary")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "gwenliu1025/sub2api-canary", cfg.Update.Repo)
+}
+
+func TestValidateUpdateRepoBlankFallsBackToDefault(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.Update.Repo = "  "
+	require.NoError(t, cfg.Validate())
+	require.Equal(t, DefaultUpdateRepo, cfg.Update.Repo)
+}
+
+func TestValidateUpdateRepoRejectsInvalidSlugs(t *testing.T) {
+	for _, repo := range []string{
+		"https://github.com/gwenliu1025/sub2api",
+		"../sub2api",
+		"gwenliu1025/sub2api/extra",
+		"bad_owner/sub2api",
+		"gwenliu1025 /sub2api",
+		"gwenliu1025/sub2api?ref=main",
+	} {
+		t.Run(repo, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+
+			cfg.Update.Repo = repo
+			err = cfg.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "update.repo")
+			require.Contains(t, err.Error(), "owner/repo")
+		})
+	}
+}
+
 func TestLoadServerTimingConfig(t *testing.T) {
 	t.Run("disabled by default", func(t *testing.T) {
 		resetViperWithJWTSecret(t)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,13 +32,19 @@ type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
 	recentReleases []*GitHubRelease
 	recentErr      error
+	repo           string
+	calls          int
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	s.repo = repo
+	s.calls++
 	return s.release, nil
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.repo = repo
+	s.calls++
 	return s.recentReleases, s.recentErr
 }
 
@@ -58,6 +65,7 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 				Name:    "v0.1.132",
 			},
 		},
+		defaultGitHubRepo,
 		"0.1.132",
 		"release",
 	)
@@ -73,6 +81,7 @@ func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateSe
 	return NewUpdateService(
 		&updateServiceCacheStub{},
 		&updateServiceGitHubClientStub{recentReleases: releases},
+		defaultGitHubRepo,
 		current,
 		"release",
 	)
@@ -135,6 +144,7 @@ func TestUpdateServiceListRollbackVersionsPropagatesFetchError(t *testing.T) {
 	svc := NewUpdateService(
 		&updateServiceCacheStub{},
 		&updateServiceGitHubClientStub{recentErr: errors.New("github unavailable")},
+		defaultGitHubRepo,
 		"0.1.147",
 		"release",
 	)
@@ -143,6 +153,77 @@ func TestUpdateServiceListRollbackVersionsPropagatesFetchError(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "github unavailable")
+}
+
+func TestUpdateServiceUsesConfiguredRepo(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.170", Name: "v0.1.170"},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api-canary", "0.1.169", "release")
+
+	info, err := svc.CheckUpdate(context.Background(), true)
+
+	require.NoError(t, err)
+	require.Equal(t, "gwenliu1025/sub2api-canary", client.repo)
+	require.Equal(t, 1, client.calls)
+	require.True(t, info.HasUpdate)
+}
+
+func TestUpdateServiceRollbackListUsesConfiguredRepo(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		recentReleases: []*GitHubRelease{{TagName: "v0.1.168"}},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "gwenliu1025/sub2api-canary", "0.1.169", "release")
+
+	versions, err := svc.ListRollbackVersions(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	require.Equal(t, "gwenliu1025/sub2api-canary", client.repo)
+	require.Equal(t, 1, client.calls)
+}
+
+func TestUpdateServiceBlankRepoFallsBackToDefault(t *testing.T) {
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.169", Name: "v0.1.169"},
+	}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "  ", "0.1.169", "release")
+
+	_, err := svc.CheckUpdate(context.Background(), true)
+
+	require.NoError(t, err)
+	require.Equal(t, defaultGitHubRepo, client.repo)
+}
+
+func TestUpdateServiceIgnoresCachedUpdateFromDifferentRepo(t *testing.T) {
+	cache := &updateServiceCacheStub{
+		data: `{"latest":"9.9.9","repo":"Wei-Shaw/sub2api","timestamp":32503680000}`,
+	}
+	client := &updateServiceGitHubClientStub{
+		release: &GitHubRelease{TagName: "v0.1.170", Name: "v0.1.170"},
+	}
+	svc := NewUpdateService(cache, client, "gwenliu1025/sub2api", "0.1.169", "release")
+
+	info, err := svc.CheckUpdate(context.Background(), false)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, client.calls)
+	require.Equal(t, "0.1.170", info.LatestVersion)
+	require.Equal(t, "gwenliu1025/sub2api", client.repo)
+}
+
+func TestProvideUpdateServiceUsesConfigRepo(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Update.Repo = "gwenliu1025/sub2api-canary"
+
+	svc := ProvideUpdateService(
+		&updateServiceCacheStub{},
+		&updateServiceGitHubClientStub{},
+		cfg,
+		BuildInfo{Version: "0.1.169", BuildType: "release"},
+	)
+
+	require.Equal(t, "gwenliu1025/sub2api-canary", svc.repo)
 }
 
 func TestUpdateServiceRollbackToVersionRejectsDisallowedTargets(t *testing.T) {
