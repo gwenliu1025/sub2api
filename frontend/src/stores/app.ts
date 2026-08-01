@@ -10,8 +10,7 @@ import { i18n } from '@/i18n'
 import {
   checkUpdates as checkUpdatesAPI,
   type VersionInfo,
-  type ReleaseInfo,
-  type UpdateMode
+  type ReleaseInfo
 } from '@/api/admin/system'
 import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
 
@@ -43,7 +42,6 @@ export const useAppStore = defineStore('app', () => {
   const latestVersion = ref<string>('')
   const hasUpdate = ref<boolean>(false)
   const buildType = ref<string>('source')
-  const updateMode = ref<UpdateMode>('binary')
   const releaseInfo = ref<ReleaseInfo | null>(null)
 
   // Auto-incrementing ID for toasts
@@ -234,7 +232,6 @@ export const useAppStore = defineStore('app', () => {
     loading.value = false
     loadingCount.value = 0
     toasts.value = []
-    updateMode.value = 'binary'
   }
 
   // ==================== Version Management ====================
@@ -251,7 +248,6 @@ export const useAppStore = defineStore('app', () => {
         latest_version: latestVersion.value,
         has_update: hasUpdate.value,
         build_type: buildType.value,
-        update_mode: updateMode.value,
         release_info: releaseInfo.value || undefined,
         cached: true
       }
@@ -269,7 +265,6 @@ export const useAppStore = defineStore('app', () => {
       latestVersion.value = data.latest_version
       hasUpdate.value = data.has_update
       buildType.value = data.build_type || 'source'
-      updateMode.value = data.update_mode || 'binary'
       releaseInfo.value = data.release_info || null
       versionLoaded.value = true
       return data
@@ -363,6 +358,7 @@ export const useAppStore = defineStore('app', () => {
         github_oauth_enabled: false,
         google_oauth_enabled: false,
         backend_mode_enabled: false,
+        passkey_enabled: false,
         version: siteVersion.value,
         balance_low_notify_enabled: false,
         account_quota_notify_enabled: false,
@@ -370,6 +366,8 @@ export const useAppStore = defineStore('app', () => {
         channel_monitor_enabled: true,
         channel_monitor_default_interval_seconds: 60,
         available_channels_enabled: false,
+        model_plaza_enabled: false,
+        model_plaza_require_auth: false,
         risk_control_enabled: false,
         service_quota_enabled: false,
         affiliate_enabled: false,
@@ -455,7 +453,6 @@ export const useAppStore = defineStore('app', () => {
     latestVersion,
     hasUpdate,
     buildType,
-    updateMode,
     releaseInfo,
 
     // Computed

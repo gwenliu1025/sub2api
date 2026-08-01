@@ -28,15 +28,15 @@ expect_reject() {
   fi
 }
 
-expect_accept "official release" "v0.1.150" "0.1.150"
+expect_accept "official release" "v0.1.169" "0.1.169"
 expect_accept "multi-digit components" "v12.34.56" "12.34.56"
 
-expect_reject "image v prefix" "v0.1.150" "v0.1.150"
-expect_reject "latest alias" "v0.1.150" "latest"
-expect_reject "bootstrap suffix" "v0.1.150" "bootstrap-0.1.150-update-agent"
-expect_reject "architecture suffix" "v0.1.150" "0.1.150-amd64"
-expect_reject "four-part version" "v0.1.150.1" "0.1.150.1"
-expect_reject "release image mismatch" "v0.1.150" "0.1.151"
+expect_reject "image v prefix" "v0.1.169" "v0.1.169"
+expect_reject "latest alias" "v0.1.169" "latest"
+expect_reject "bootstrap suffix" "v0.1.169" "bootstrap-0.1.169-update-agent"
+expect_reject "architecture suffix" "v0.1.169" "0.1.169-amd64"
+expect_reject "four-part version" "v0.1.169.1" "0.1.169.1"
+expect_reject "release image mismatch" "v0.1.169" "0.1.170"
 
 if ((failures > 0)); then
   printf '%d validation case(s) failed\n' "$failures" >&2

@@ -13,25 +13,6 @@ export interface ReleaseInfo {
 
 export type UpdateMode = 'binary' | 'docker_agent'
 
-export type UpdateAgentState =
-  | 'idle'
-  | 'preparing'
-  | 'prepared'
-  | 'activating'
-  | 'healthy'
-  | 'rolled_back'
-  | 'failed'
-  | 'rollback_failed'
-
-export interface UpdateAgentStatus {
-  state: UpdateAgentState
-  current_image: string
-  target_image: string
-  previous_image: string
-  message: string
-  updated_at: string
-}
-
 export interface VersionInfo {
   current_version: string
   latest_version: string
@@ -40,7 +21,7 @@ export interface VersionInfo {
   cached: boolean
   warning?: string
   build_type: string // "source" for manual builds, "release" for CI builds
-  update_mode: UpdateMode
+  update_mode?: UpdateMode
 }
 
 /**
@@ -62,9 +43,35 @@ export async function checkUpdates(force = false): Promise<VersionInfo> {
   return data
 }
 
+export type UpdateAgentState =
+  | 'idle'
+  | 'preparing'
+  | 'prepared'
+  | 'activating'
+  | 'healthy'
+  | 'rolled_back'
+  | 'failed'
+  | 'rollback_failed'
+
+export interface UpdateAgentStatus {
+  state: UpdateAgentState
+  current_image: string
+  target_image: string
+  previous_image: string
+  message: string
+  updated_at: string
+}
+
 export interface UpdateResult {
   message: string
   need_restart: boolean
+  update_mode?: UpdateMode
+  status?: UpdateAgentStatus
+}
+
+export async function getUpdateStatus(): Promise<UpdateAgentStatus> {
+  const { data } = await apiClient.get<UpdateAgentStatus>('/admin/system/update-status')
+  return data
 }
 
 export interface RollbackVersionInfo {
@@ -84,18 +91,21 @@ export async function getRollbackVersions(): Promise<{ versions: RollbackVersion
 }
 
 /**
+ * In-place update/rollback downloads a full release binary from GitHub, which
+ * can take several minutes on slow links. The global 30s axios timeout would
+ * abort the request mid-download (#4504), so these calls wait as long as the
+ * backend allows (15 minutes server-side).
+ */
+const UPDATE_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
+
+/**
  * Perform system update
  * Downloads and applies the latest version
  */
 export async function performUpdate(): Promise<UpdateResult> {
   const { data } = await apiClient.post<UpdateResult>('/admin/system/update', undefined, {
-    timeout: 610_000
+    timeout: UPDATE_REQUEST_TIMEOUT_MS
   })
-  return data
-}
-
-export async function getUpdateStatus(): Promise<UpdateAgentStatus> {
-  const { data } = await apiClient.get<UpdateAgentStatus>('/admin/system/update-status')
   return data
 }
 
@@ -106,7 +116,8 @@ export async function getUpdateStatus(): Promise<UpdateAgentStatus> {
 export async function rollback(version?: string): Promise<UpdateResult> {
   const { data } = await apiClient.post<UpdateResult>(
     '/admin/system/rollback',
-    version ? { version } : undefined
+    version ? { version } : undefined,
+    { timeout: UPDATE_REQUEST_TIMEOUT_MS }
   )
   return data
 }
@@ -116,8 +127,9 @@ export async function rollback(version?: string): Promise<UpdateResult> {
  */
 export interface RestartResult {
   message: string
-  update_mode: UpdateMode
+  update_mode?: UpdateMode
   status?: UpdateAgentStatus
+  operation_id?: string
 }
 
 export async function restartService(): Promise<RestartResult> {
@@ -128,8 +140,8 @@ export async function restartService(): Promise<RestartResult> {
 export const systemAPI = {
   getVersion,
   checkUpdates,
-  performUpdate,
   getUpdateStatus,
+  performUpdate,
   getRollbackVersions,
   rollback,
   restartService

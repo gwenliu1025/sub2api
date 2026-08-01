@@ -54,11 +54,7 @@ type UnixUpdateAgentClient struct {
 	expectedRepository string
 }
 
-func NewUnixUpdateAgentClient(
-	socketPath string,
-	expectedRepository string,
-	timeout time.Duration,
-) *UnixUpdateAgentClient {
+func NewUnixUpdateAgentClient(socketPath, expectedRepository string, timeout time.Duration) *UnixUpdateAgentClient {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -82,14 +78,9 @@ func (c *UnixUpdateAgentClient) Prepare(ctx context.Context, version string) (*U
 	normalizedVersion := normalizeUpdateAgentVersion(version)
 	body, err := json.Marshal(struct {
 		Version string `json:"version"`
-	}{
-		Version: normalizedVersion,
-	})
+	}{Version: normalizedVersion})
 	if err != nil {
-		return nil, infraerrors.InternalServer(
-			"UPDATE_AGENT_REQUEST_INVALID",
-			"failed to build update agent request",
-		)
+		return nil, infraerrors.InternalServer("UPDATE_AGENT_REQUEST_INVALID", "failed to build update agent request")
 	}
 
 	status, err := c.do(ctx, http.MethodPost, "/v1/prepare", bytes.NewReader(body))
@@ -99,11 +90,7 @@ func (c *UnixUpdateAgentClient) Prepare(ctx context.Context, version string) (*U
 
 	expectedTarget := c.expectedRepository + ":" + normalizedVersion
 	if status.TargetImage != expectedTarget {
-		return nil, infraerrors.New(
-			http.StatusBadGateway,
-			"UPDATE_TARGET_REPOSITORY_MISMATCH",
-			"update agent returned an unexpected target image",
-		)
+		return nil, infraerrors.New(http.StatusBadGateway, "UPDATE_TARGET_REPOSITORY_MISMATCH", "update agent returned an unexpected target image")
 	}
 	return status, nil
 }
@@ -123,18 +110,10 @@ func (c *UnixUpdateAgentClient) CloseIdleConnections() {
 	c.transport.CloseIdleConnections()
 }
 
-func (c *UnixUpdateAgentClient) do(
-	ctx context.Context,
-	method string,
-	path string,
-	body io.Reader,
-) (*UpdateAgentStatus, error) {
-	req, err := http.NewRequestWithContext(ctx, method, updateAgentBaseURL+path, body)
+func (c *UnixUpdateAgentClient) do(ctx context.Context, method, requestPath string, body io.Reader) (*UpdateAgentStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, method, updateAgentBaseURL+requestPath, body)
 	if err != nil {
-		return nil, infraerrors.InternalServer(
-			"UPDATE_AGENT_REQUEST_INVALID",
-			"failed to build update agent request",
-		)
+		return nil, infraerrors.InternalServer("UPDATE_AGENT_REQUEST_INVALID", "failed to build update agent request")
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -159,10 +138,7 @@ func (c *UnixUpdateAgentClient) do(
 	}
 
 	var status UpdateAgentStatus
-	if err := json.Unmarshal(responseBody, &status); err != nil {
-		return nil, invalidUpdateAgentResponseError()
-	}
-	if !isValidUpdateAgentState(status.State) {
+	if err := json.Unmarshal(responseBody, &status); err != nil || !isValidUpdateAgentState(status.State) {
 		return nil, invalidUpdateAgentResponseError()
 	}
 	return &status, nil
@@ -185,14 +161,8 @@ func readUpdateAgentResponseBody(body io.Reader) ([]byte, error) {
 
 func isValidUpdateAgentState(state UpdateAgentState) bool {
 	switch state {
-	case UpdateAgentIdle,
-		UpdateAgentPreparing,
-		UpdateAgentPrepared,
-		UpdateAgentActivating,
-		UpdateAgentHealthy,
-		UpdateAgentRolledBack,
-		UpdateAgentFailed,
-		UpdateAgentRollbackFailed:
+	case UpdateAgentIdle, UpdateAgentPreparing, UpdateAgentPrepared, UpdateAgentActivating,
+		UpdateAgentHealthy, UpdateAgentRolledBack, UpdateAgentFailed, UpdateAgentRollbackFailed:
 		return true
 	default:
 		return false
@@ -200,11 +170,7 @@ func isValidUpdateAgentState(state UpdateAgentState) bool {
 }
 
 func invalidUpdateAgentResponseError() error {
-	return infraerrors.New(
-		http.StatusBadGateway,
-		"UPDATE_AGENT_INVALID_RESPONSE",
-		"update agent returned an invalid response",
-	)
+	return infraerrors.New(http.StatusBadGateway, "UPDATE_AGENT_INVALID_RESPONSE", "update agent returned an invalid response")
 }
 
 type updateAgentErrorResponse struct {
@@ -223,64 +189,39 @@ func mapUpdateAgentResponseError(responseBody []byte) error {
 	if code == "" && response.Error != nil {
 		code = strings.TrimSpace(response.Error.Code)
 	}
-
 	switch code {
 	case "AGENT_BUSY":
 		return infraerrors.Conflict("UPDATE_AGENT_BUSY", "update agent is busy")
 	case "INVALID_VERSION":
 		return infraerrors.BadRequest("UPDATE_TARGET_INVALID", "update target version is invalid")
 	case "IMAGE_PULL_FAILED":
-		return infraerrors.New(
-			http.StatusBadGateway,
-			"UPDATE_IMAGE_PULL_FAILED",
-			"update image pull failed",
-		)
+		return infraerrors.New(http.StatusBadGateway, "UPDATE_IMAGE_PULL_FAILED", "update image pull failed")
 	case "IMAGE_VERIFICATION_FAILED":
-		return infraerrors.New(
-			http.StatusBadGateway,
-			"UPDATE_IMAGE_VERIFICATION_FAILED",
-			"update image verification failed",
-		)
+		return infraerrors.New(http.StatusBadGateway, "UPDATE_IMAGE_VERIFICATION_FAILED", "update image verification failed")
 	case "NO_PREPARED_UPDATE":
 		return infraerrors.Conflict("UPDATE_NOT_PREPARED", "no prepared update is available")
 	case "ACTIVATION_IN_PROGRESS":
-		return infraerrors.Conflict(
-			"UPDATE_ACTIVATION_IN_PROGRESS",
-			"update activation is already in progress",
-		)
+		return infraerrors.Conflict("UPDATE_ACTIVATION_IN_PROGRESS", "update activation is already in progress")
 	default:
 		return genericUpdateAgentError()
 	}
 }
 
 func genericUpdateAgentError() error {
-	return infraerrors.New(
-		http.StatusBadGateway,
-		"UPDATE_AGENT_ERROR",
-		"update agent request failed",
-	)
+	return infraerrors.New(http.StatusBadGateway, "UPDATE_AGENT_ERROR", "update agent request failed")
 }
 
 func mapUpdateAgentRequestError(ctx context.Context, err error) error {
 	if isUpdateAgentCancellation(ctx, err) {
-		return infraerrors.ClientClosed(
-			"UPDATE_AGENT_REQUEST_CANCELED",
-			"update agent request was canceled",
-		).WithCause(context.Canceled)
+		return infraerrors.ClientClosed("UPDATE_AGENT_REQUEST_CANCELED", "update agent request was canceled").WithCause(context.Canceled)
 	}
 	if isUpdateAgentTimeout(ctx, err) {
 		return updateAgentTimeoutError()
 	}
 	if errors.Is(err, os.ErrPermission) {
-		return infraerrors.ServiceUnavailable(
-			"UPDATE_AGENT_PERMISSION_DENIED",
-			"permission denied while connecting to update agent",
-		).WithCause(os.ErrPermission)
+		return infraerrors.ServiceUnavailable("UPDATE_AGENT_PERMISSION_DENIED", "permission denied while connecting to update agent").WithCause(os.ErrPermission)
 	}
-	return infraerrors.ServiceUnavailable(
-		"UPDATE_AGENT_UNAVAILABLE",
-		"update agent is unavailable",
-	)
+	return infraerrors.ServiceUnavailable("UPDATE_AGENT_UNAVAILABLE", "update agent is unavailable")
 }
 
 func isUpdateAgentCancellation(ctx context.Context, err error) bool {
@@ -291,14 +232,10 @@ func isUpdateAgentTimeout(ctx context.Context, err error) bool {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-
-	var netErr net.Error
-	return errors.As(err, &netErr) && netErr.Timeout()
+	var networkError net.Error
+	return errors.As(err, &networkError) && networkError.Timeout()
 }
 
 func updateAgentTimeoutError() error {
-	return infraerrors.GatewayTimeout(
-		"UPDATE_AGENT_TIMEOUT",
-		"update agent request timed out",
-	).WithCause(context.DeadlineExceeded)
+	return infraerrors.GatewayTimeout("UPDATE_AGENT_TIMEOUT", "update agent request timed out").WithCause(context.DeadlineExceeded)
 }

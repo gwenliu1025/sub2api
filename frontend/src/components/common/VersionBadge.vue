@@ -114,71 +114,10 @@
                 </p>
               </div>
 
-              <!-- Priority 1: Activation result (must remain visible without reloading) -->
-              <div v-if="hasActivationResult" class="space-y-2">
+              <!-- Priority 1: Update error (must check before hasUpdate) -->
+              <div v-if="updateError" class="space-y-2">
                 <div
-                  class="flex items-start gap-3 rounded-lg border p-3"
-                  :class="
-                    activationState === 'rolled_back'
-                      ? 'border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-900/20'
-                      : 'border-red-300 bg-red-50 dark:border-red-700/60 dark:bg-red-900/25'
-                  "
-                >
-                  <div
-                    class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
-                    :class="
-                      activationState === 'rolled_back'
-                        ? 'bg-amber-100 dark:bg-amber-900/50'
-                        : 'bg-red-100 dark:bg-red-900/50'
-                    "
-                  >
-                    <Icon
-                      :name="activationState === 'rolled_back' ? 'clock' : 'exclamationTriangle'"
-                      size="sm"
-                      :stroke-width="2"
-                      :class="
-                        activationState === 'rolled_back'
-                          ? 'text-amber-600 dark:text-amber-400'
-                          : 'text-red-700 dark:text-red-300'
-                      "
-                    />
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p
-                      class="text-sm font-semibold"
-                      :class="
-                        activationState === 'rolled_back'
-                          ? 'text-amber-800 dark:text-amber-200'
-                          : 'text-red-800 dark:text-red-200'
-                      "
-                    >
-                      {{ activationTitle }}
-                    </p>
-                    <p
-                      v-if="activationMessage"
-                      class="mt-1 whitespace-pre-wrap break-words text-xs leading-4"
-                      :class="
-                        activationState === 'rolled_back'
-                          ? 'text-amber-700 dark:text-amber-300'
-                          : 'text-red-700 dark:text-red-300'
-                      "
-                    >
-                      {{ activationMessage }}
-                    </p>
-                    <p
-                      v-if="activationState === 'rollback_failed'"
-                      class="mt-2 whitespace-pre-wrap break-words text-xs font-semibold leading-4 text-red-800 dark:text-red-200"
-                    >
-                      {{ t('version.manualRecoveryRequired') }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Priority 2: Update error (must check before hasUpdate) -->
-              <div v-else-if="updateError" class="space-y-2">
-                <div
-                  class="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
+                  class="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800/50 dark:bg-red-900/20"
                 >
                   <div
                     class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/50"
@@ -194,9 +133,7 @@
                     <p class="text-sm font-medium text-red-700 dark:text-red-300">
                       {{ t('version.updateFailed') }}
                     </p>
-                    <p
-                      class="whitespace-pre-wrap break-words text-xs leading-4 text-red-600/70 dark:text-red-400/70"
-                    >
+                    <p class="truncate text-xs text-red-600/70 dark:text-red-400/70">
                       {{ updateError }}
                     </p>
                   </div>
@@ -212,7 +149,7 @@
                 </button>
               </div>
 
-              <!-- Priority 3: Update success - need restart -->
+              <!-- Priority 2: Update success - need restart -->
               <div v-else-if="updateSuccess && needRestart" class="space-y-2">
                 <div
                   class="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800/50 dark:bg-green-900/20"
@@ -235,26 +172,16 @@
                       {{
                         successKind === 'rollback'
                           ? t('version.rollbackComplete')
-                          : isDockerAgent
-                            ? t('version.imagePrepared')
-                            : t('version.updateComplete')
+                          : t('version.updateComplete')
                       }}
                     </p>
-                    <p
-                      class="whitespace-pre-wrap break-words text-xs leading-4 text-green-600/70 dark:text-green-400/70"
-                    >
-                      {{
-                        restarting && isDockerAgent
-                          ? t('version.waitingForHealth')
-                          : successKind === 'update' && isDockerAgent
-                            ? t('version.activatePrepared')
-                            : t('version.restartRequired')
-                      }}
+                    <p class="text-xs text-green-600/70 dark:text-green-400/70">
+                      {{ t('version.restartRequired') }}
                     </p>
                   </div>
                 </div>
 
-                <!-- Restart button -->
+                <!-- Restart button with countdown -->
                 <button
                   @click="handleRestart"
                   :disabled="restarting"
@@ -295,15 +222,16 @@
                     />
                   </svg>
                   <template v-if="restarting">
-                    <span>{{
-                      isDockerAgent ? t('version.activatingImage') : t('version.restarting')
-                    }}</span>
+                    <span>{{ t('version.restarting') }}</span>
+                    <span v-if="restartCountdown > 0" class="tabular-nums"
+                      >({{ restartCountdown }}s)</span
+                    >
                   </template>
                   <span v-else>{{ t('version.restartNow') }}</span>
                 </button>
               </div>
 
-              <!-- Priority 4: Update available for source build - show git pull hint -->
+              <!-- Priority 3: Update available for source build - show git pull hint -->
               <div v-else-if="hasUpdate && !isReleaseBuild" class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
@@ -363,7 +291,7 @@
                 </div>
               </div>
 
-              <!-- Priority 5: Update available for release build - show update button -->
+              <!-- Priority 4: Update available for release build - show update button -->
               <div v-else-if="hasUpdate && isReleaseBuild" class="space-y-2">
                 <!-- Update info card -->
                 <div
@@ -411,15 +339,7 @@
                     ></path>
                   </svg>
                   <Icon v-else name="download" size="sm" :stroke-width="2" />
-                  {{
-                    updating
-                      ? isDockerAgent
-                        ? t('version.preparingImage')
-                        : t('version.updating')
-                      : isDockerAgent
-                        ? t('version.prepareImage')
-                        : t('version.updateNow')
-                  }}
+                  {{ updating ? t('version.updating') : t('version.updateNow') }}
                 </button>
 
                 <!-- View release link -->
@@ -435,7 +355,7 @@
                 </a>
               </div>
 
-              <!-- Priority 6: Up to date - GitHub link + version rollback -->
+              <!-- Priority 5: Up to date - GitHub link + version rollback -->
               <div v-else class="space-y-2">
                 <a
                   v-if="releaseInfo?.html_url && releaseInfo.html_url !== '#'"
@@ -724,18 +644,16 @@ import { useAuthStore, useAppStore } from '@/stores'
 import {
   performUpdate,
   restartService,
-  getUpdateStatus,
   getRollbackVersions,
   rollback as rollbackAPI,
   type RollbackVersionInfo
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
-import { waitForUpdateActivation } from '@/utils/updateActivation'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'gwenliu1025/sub2api'
-// GHCR image tags carry no "v" prefix, e.g. ghcr.io/gwenliu1025/sub2api:0.1.148
-const DOCKER_IMAGE = 'ghcr.io/gwenliu1025/sub2api'
+const GITHUB_REPO = 'Wei-Shaw/sub2api'
+// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
+const DOCKER_IMAGE = 'weishaw/sub2api'
 
 const { t } = useI18n()
 
@@ -765,12 +683,9 @@ const restarting = ref(false)
 const needRestart = ref(false)
 const updateError = ref('')
 const updateSuccess = ref(false)
+const restartCountdown = ref(0)
 // Distinguishes the success + restart panel between update and rollback flows
 const successKind = ref<'update' | 'rollback'>('update')
-const activationState = ref<'idle' | 'activating' | 'rolled_back' | 'rollback_failed' | 'failed' | 'timeout'>(
-  'idle'
-)
-const activationMessage = ref('')
 
 // Rollback states
 const rollbackPanelOpen = ref(false)
@@ -815,22 +730,6 @@ const activeManualCommand = computed(() =>
 
 // Only show update check for release builds (binary/docker deployment)
 const isReleaseBuild = computed(() => buildType.value === 'release')
-const isDockerAgent = computed(() => appStore.updateMode === 'docker_agent')
-const hasActivationResult = computed(() =>
-  ['rolled_back', 'rollback_failed', 'failed', 'timeout'].includes(activationState.value)
-)
-const activationTitle = computed(() => {
-  switch (activationState.value) {
-    case 'rolled_back':
-      return t('version.activationRolledBack')
-    case 'rollback_failed':
-      return t('version.activationRollbackFailed')
-    case 'timeout':
-      return t('version.activationTimedOut')
-    default:
-      return t('version.activationFailed')
-  }
-})
 
 function toggleDropdown() {
   dropdownOpen.value = !dropdownOpen.value
@@ -847,7 +746,6 @@ async function refreshVersion(force = true) {
   updateError.value = ''
   updateSuccess.value = false
   needRestart.value = false
-  resetActivationState()
   resetRollbackState()
 
   await appStore.fetchVersion(force)
@@ -859,40 +757,20 @@ async function handleUpdate() {
   updating.value = true
   updateError.value = ''
   updateSuccess.value = false
-  resetActivationState()
 
   try {
     const result = await performUpdate()
     successKind.value = 'update'
     updateSuccess.value = true
     needRestart.value = result.need_restart
-    if (!isDockerAgent.value) {
-      // Binary updates are already applied before restart; Docker images are only prepared here.
-      appStore.clearVersionCache()
-    }
+    // Clear version cache to reflect update completed
+    appStore.clearVersionCache()
   } catch (error: unknown) {
-    updateError.value = extractErrorMessage(error, t('version.updateFailed'))
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    updateError.value = err.response?.data?.message || err.message || t('version.updateFailed')
   } finally {
     updating.value = false
   }
-}
-
-function resetActivationState() {
-  activationState.value = 'idle'
-  activationMessage.value = ''
-}
-
-function extractErrorMessage(error: unknown, fallback: string): string {
-  const err = error as { response?: { data?: { message?: string } }; message?: string }
-  return err.response?.data?.message || err.message || fallback
-}
-
-function isExplicitApiError(error: unknown): boolean {
-  const err = error as { status?: unknown; response?: unknown }
-  return (
-    (typeof err.status === 'number' && Number.isFinite(err.status) && err.status > 0) ||
-    Boolean(err.response)
-  )
 }
 
 function resetRollbackState() {
@@ -953,7 +831,6 @@ async function handleRollback() {
 
   rollingBack.value = true
   rollbackError.value = ''
-  resetActivationState()
 
   try {
     const result = await rollbackAPI(selectedRollbackVersion.value)
@@ -964,7 +841,8 @@ async function handleRollback() {
     // Clear version cache so the next check reflects the rolled-back version
     appStore.clearVersionCache()
   } catch (error: unknown) {
-    rollbackError.value = extractErrorMessage(error, t('version.rollbackFailed'))
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    rollbackError.value = err.response?.data?.message || err.message || t('version.rollbackFailed')
   } finally {
     rollingBack.value = false
   }
@@ -974,69 +852,53 @@ async function handleRestart() {
   if (restarting.value) return
 
   restarting.value = true
-  updateError.value = ''
-  activationState.value = 'activating'
-  activationMessage.value = ''
+  restartCountdown.value = 8
 
   try {
-    try {
-      await restartService()
-    } catch (error: unknown) {
-      // Structured API/HTTP errors are explicit rejections and should be shown.
-      // Network disconnects (status: 0 or no status) are allowed to continue into polling.
-      if (isExplicitApiError(error)) {
-        activationState.value = 'failed'
-        activationMessage.value = extractErrorMessage(error, t('version.activationFailed'))
-        return
-      }
-    }
-
-    const outcome = await waitForUpdateActivation({
-      mode: appStore.updateMode,
-      checkHealth: checkServiceHealth,
-      getStatus: getUpdateStatus
-    })
-
-    switch (outcome.state) {
-      case 'healthy':
-        appStore.clearVersionCache()
-        window.location.reload()
-        return
-      case 'rolled_back':
-        activationState.value = 'rolled_back'
-        activationMessage.value = outcome.status.message
-        return
-      case 'rollback_failed':
-        activationState.value = 'rollback_failed'
-        activationMessage.value = outcome.status.message
-        return
-      case 'failed':
-        activationState.value = 'failed'
-        activationMessage.value = outcome.status?.message || t('version.activationFailed')
-        return
-      case 'timeout':
-        activationState.value = 'timeout'
-        activationMessage.value = ''
-        return
-    }
-  } catch (error: unknown) {
-    activationState.value = 'failed'
-    activationMessage.value = extractErrorMessage(error, t('version.activationFailed'))
-  } finally {
-    restarting.value = false
+    await restartService()
+    // Service will restart, page will reload automatically or show disconnected
+  } catch (error) {
+    // Expected - connection will be lost during restart
+    console.log('Service restarting...')
   }
+
+  // Start countdown
+  const countdownInterval = setInterval(() => {
+    restartCountdown.value--
+    if (restartCountdown.value <= 0) {
+      clearInterval(countdownInterval)
+      // Try to check if service is back before reload
+      checkServiceAndReload()
+    }
+  }, 1000)
 }
 
-async function checkServiceHealth(): Promise<boolean> {
-  try {
-    const response = await fetch('/health', {
-      method: 'GET',
-      cache: 'no-cache'
-    })
-    return response.ok
-  } catch {
-    return false
+async function checkServiceAndReload() {
+  const maxRetries = 5
+  const retryDelay = 1000
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch('/health', {
+        method: 'GET',
+        cache: 'no-cache'
+      })
+      if (response.ok) {
+        // Service is back, reload page
+        window.location.reload()
+        return
+      }
+    } catch {
+      // Service not ready yet
+    }
+
+    if (i < maxRetries - 1) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelay))
+    }
   }
+
+  // After retries, reload anyway
+  window.location.reload()
 }
 
 function handleClickOutside(event: MouseEvent) {

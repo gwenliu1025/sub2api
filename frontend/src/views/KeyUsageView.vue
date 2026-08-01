@@ -5,7 +5,7 @@
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <router-link to="/home" class="flex items-center gap-3">
           <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
-            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
+            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
           <span class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">{{ siteName }}</span>
         </router-link>
@@ -423,6 +423,7 @@ import { useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildGatewayUrl } from '@/api/client'
+import { formatDateLocalInput } from '@/utils/format'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t, locale } = useI18n()
@@ -433,7 +434,7 @@ const appStore = useAppStore()
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
 const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const docUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''))
-const githubUrl = 'https://github.com/gwenliu1025/sub2api'
+const githubUrl = 'https://github.com/Wei-Shaw/sub2api'
 
 // ==================== Theme (same as HomeView) ====================
 
@@ -490,7 +491,6 @@ function setDateRange(key: DateRangeKey) {
 
 function getDateParams(): string {
   const now = new Date()
-  const fmt = (d: Date) => d.toISOString().split('T')[0]
   const params = new URLSearchParams()
 
   if (currentRange.value === 'custom') {
@@ -499,13 +499,13 @@ function getDateParams(): string {
       params.set('end_date', customEndDate.value)
     }
   } else {
-    const end = fmt(now)
+    const end = formatDateLocalInput(now)
     let start: string
     switch (currentRange.value) {
       case 'today': start = end; break
-      case '7d': start = fmt(new Date(now.getTime() - 7 * 86400000)); break
-      case '30d': start = fmt(new Date(now.getTime() - 30 * 86400000)); break
-      default: start = fmt(new Date(now.getTime() - 30 * 86400000))
+      case '7d': start = formatDateLocalInput(new Date(now.getTime() - 7 * 86400000)); break
+      case '30d': start = formatDateLocalInput(new Date(now.getTime() - 30 * 86400000)); break
+      default: start = formatDateLocalInput(new Date(now.getTime() - 30 * 86400000))
     }
     params.set('start_date', start)
     params.set('end_date', end)
@@ -535,10 +535,6 @@ const RING_GRADIENTS = [
 
 const ringAnimated = ref(false)
 const displayPcts = ref<number[]>([])
-let ringStartFrame: number | null = null
-let ringDelayTimer: number | null = null
-let ringAnimationFrame: number | null = null
-let ringAnimationGeneration = 0
 
 const ringTrackColor = computed(() => isDark.value ? '#222222' : '#F0F0EE')
 
@@ -557,39 +553,13 @@ function getRingOffset(ring: RingItem): number {
   return CIRCUMFERENCE - (Math.min(ring.pct, 100) / 100) * CIRCUMFERENCE
 }
 
-function cancelRingAnimation() {
-  ringAnimationGeneration += 1
-
-  if (ringStartFrame !== null) {
-    cancelAnimationFrame(ringStartFrame)
-    ringStartFrame = null
-  }
-  if (ringDelayTimer !== null) {
-    clearTimeout(ringDelayTimer)
-    ringDelayTimer = null
-  }
-  if (ringAnimationFrame !== null) {
-    cancelAnimationFrame(ringAnimationFrame)
-    ringAnimationFrame = null
-  }
-}
-
 function triggerRingAnimation(items: RingItem[]) {
-  cancelRingAnimation()
-  const animationGeneration = ringAnimationGeneration
   ringAnimated.value = false
   displayPcts.value = items.map(() => 0)
 
   nextTick(() => {
-    if (animationGeneration !== ringAnimationGeneration) return
-
-    ringStartFrame = requestAnimationFrame(() => {
-      ringStartFrame = null
-      if (animationGeneration !== ringAnimationGeneration) return
-
-      ringDelayTimer = window.setTimeout(() => {
-        ringDelayTimer = null
-        if (animationGeneration !== ringAnimationGeneration) return
+    requestAnimationFrame(() => {
+      setTimeout(() => {
         ringAnimated.value = true
 
         // Animate percentage numbers
@@ -598,18 +568,13 @@ function triggerRingAnimation(items: RingItem[]) {
         const targets = items.map(item => item.isBalance ? 0 : item.pct)
 
         function tick() {
-          if (animationGeneration !== ringAnimationGeneration) return
           const elapsed = performance.now() - startTime
           const p = Math.min(elapsed / duration, 1)
           const ease = 1 - Math.pow(1 - p, 3)
           displayPcts.value = targets.map(target => Math.round(ease * target))
-          if (p < 1) {
-            ringAnimationFrame = requestAnimationFrame(tick)
-          } else {
-            ringAnimationFrame = null
-          }
+          if (p < 1) requestAnimationFrame(tick)
         }
-        ringAnimationFrame = requestAnimationFrame(tick)
+        requestAnimationFrame(tick)
       }, 50)
     })
   })
@@ -971,7 +936,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
-  cancelRingAnimation()
 })
 </script>
 

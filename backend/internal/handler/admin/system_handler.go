@@ -24,6 +24,27 @@ type SystemHandler struct {
 	lockSvc   *service.SystemOperationLockService
 }
 
+// systemUpdateTimeout bounds a full in-place update or rollback: the release
+// manifest fetch plus a large binary download over slow links. It must stay
+// above the GitHub download client timeout (10 minutes) so the download owns
+// its own deadline.
+const systemUpdateTimeout = 15 * time.Minute
+
+// systemUpdateContext detaches a long-running update/rollback from the HTTP
+// request lifetime. Browsers and reverse proxies commonly abort idle requests
+// after 30-60s (axios default, nginx proxy_read_timeout), which canceled
+// c.Request.Context() mid-download and killed the update with
+// "download failed: context canceled" (#4504). The swap keeps running after a
+// client disconnect; a later retry then hits the system operation lock or
+// reports "Already up to date".
+func systemUpdateContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(base, systemUpdateTimeout)
+}
+
 type systemUpdateService interface {
 	CheckUpdate(ctx context.Context, force bool) (*service.UpdateInfo, error)
 	PerformUpdate(ctx context.Context) error
@@ -64,7 +85,7 @@ func (h *SystemHandler) CheckUpdates(c *gin.Context) {
 	response.Success(c, info)
 }
 
-// GetUpdateStatus returns the current update agent state
+// GetUpdateStatus 返回宿主机更新代理的当前状态。
 // GET /api/v1/admin/system/update-status
 func (h *SystemHandler) GetUpdateStatus(c *gin.Context) {
 	status, err := h.updateSvc.GetUpdateStatus(c.Request.Context())
@@ -91,9 +112,12 @@ func (h *SystemHandler) PerformUpdate(c *gin.Context) {
 			release(releaseReason, succeeded)
 		}()
 
-		if err := h.updateSvc.PerformUpdate(ctx); err != nil {
+		updateCtx, cancel := systemUpdateContext(ctx)
+		defer cancel()
+
+		if err := h.updateSvc.PerformUpdate(updateCtx); err != nil {
 			if errors.Is(err, service.ErrNoUpdateAvailable) {
-				info, checkErr := h.updateSvc.CheckUpdate(ctx, false)
+				info, checkErr := h.updateSvc.CheckUpdate(updateCtx, false)
 				if checkErr != nil {
 					releaseReason = "SYSTEM_UPDATE_FAILED"
 					return nil, checkErr
@@ -112,11 +136,19 @@ func (h *SystemHandler) PerformUpdate(c *gin.Context) {
 		}
 		succeeded = true
 
-		return gin.H{
+		result := gin.H{
 			"message":      "Update completed. Please restart the service.",
 			"need_restart": true,
 			"operation_id": lock.OperationID(),
-		}, nil
+		}
+		if h.updateSvc.UsesDockerAgent() {
+			result["message"] = "Update prepared. Please restart the service."
+			result["update_mode"] = "docker_agent"
+			if status, statusErr := h.updateSvc.GetUpdateStatus(updateCtx); statusErr == nil {
+				result["status"] = status
+			}
+		}
+		return result, nil
 	})
 }
 
@@ -168,7 +200,10 @@ func (h *SystemHandler) Rollback(c *gin.Context) {
 		}()
 
 		if targetVersion != "" {
-			err = h.updateSvc.RollbackToVersion(ctx, targetVersion)
+			// 指定版本回退同样要下载完整二进制，与更新一样和请求生命周期解耦。
+			rollbackCtx, cancel := systemUpdateContext(ctx)
+			defer cancel()
+			err = h.updateSvc.RollbackToVersion(rollbackCtx, targetVersion)
 		} else {
 			err = h.updateSvc.Rollback()
 		}
@@ -197,16 +232,14 @@ func (h *SystemHandler) RestartService(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		var releaseReason string
 		succeeded := false
 		defer func() {
-			release(releaseReason, succeeded)
+			release("", succeeded)
 		}()
 
 		if h.updateSvc.UsesDockerAgent() {
 			status, err := h.updateSvc.ActivatePreparedUpdate(ctx)
 			if err != nil {
-				releaseReason = "SYSTEM_RESTART_FAILED"
 				return nil, err
 			}
 			succeeded = true
@@ -220,11 +253,10 @@ func (h *SystemHandler) RestartService(c *gin.Context) {
 
 		// Schedule service restart in background after sending response
 		// This ensures the client receives the success response before the service restarts
-		restart := restartServiceAsync
 		go func() {
 			// Wait a moment to ensure the response is sent
 			time.Sleep(500 * time.Millisecond)
-			restart()
+			restartServiceAsync()
 		}()
 		succeeded = true
 		return gin.H{

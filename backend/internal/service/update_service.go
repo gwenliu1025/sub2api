@@ -33,7 +33,7 @@ var (
 const (
 	updateCacheKey    = "update_check_cache"
 	updateCacheTTL    = 1200 // 20 minutes
-	defaultGitHubRepo = "gwenliu1025/sub2api"
+	defaultGitHubRepo = config.DefaultUpdateRepo
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -74,12 +74,11 @@ type UpdateService struct {
 }
 
 // NewUpdateService creates a new UpdateService
-func NewUpdateService(
-	cache UpdateCache,
-	githubClient GitHubReleaseClient,
-	repo, version, buildType, mode string,
-	agentClient UpdateAgentClient,
-) *UpdateService {
+func NewUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, repo, version, buildType, mode string, agentClient UpdateAgentClient) *UpdateService {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = config.UpdateModeBinary
+	}
 	return &UpdateService{
 		cache:          cache,
 		githubClient:   githubClient,
@@ -195,7 +194,6 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 	if !info.HasUpdate {
 		return ErrNoUpdateAvailable
 	}
-
 	if s.UsesDockerAgent() {
 		agentClient, err := s.requireUpdateAgentClient()
 		if err != nil {
@@ -345,12 +343,8 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 // Rollback restores the previous version
 func (s *UpdateService) Rollback() error {
 	if s.UsesDockerAgent() {
-		return infraerrors.BadRequest(
-			"LEGACY_ROLLBACK_UNAVAILABLE",
-			"local binary rollback is unavailable in Docker update mode",
-		)
+		return infraerrors.BadRequest("LEGACY_ROLLBACK_UNAVAILABLE", "local binary rollback is unavailable in Docker update mode")
 	}
-
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -417,7 +411,6 @@ func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) e
 	if match == nil {
 		return ErrRollbackVersionNotAllowed
 	}
-
 	if s.UsesDockerAgent() {
 		agentClient, err := s.requireUpdateAgentClient()
 		if err != nil {
@@ -688,7 +681,6 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	if err := json.Unmarshal([]byte(data), &cached); err != nil {
 		return nil, err
 	}
-
 	if cached.Repo != s.repo {
 		return nil, fmt.Errorf("cache repo mismatch")
 	}
