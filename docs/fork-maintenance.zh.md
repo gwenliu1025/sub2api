@@ -20,7 +20,7 @@
 `404 page not found`。该镜像
 `ghcr.io/gwenliu1025/sub2api:0.1.169-anthropic-accept-encoding-146789daf` 已回滚并禁止复用。
 `-r2` 使用仓库根多阶段 `Dockerfile` 构建，内嵌前端、正式入口、资源目录和公网根页面
-`200 + HTML` 均已验证。
+`200 + HTML` 均已验证；错误镜像标签已从生产机删除。
 
 ## 根因与修复边界
 
