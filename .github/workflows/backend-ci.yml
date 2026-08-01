@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check deployment scripts
         run: |
+          /bin/bash .github/scripts/test-validate-release-version.sh
+          /bin/bash .github/scripts/test-release-policy.sh
           /bin/bash -n deploy/apple-container.sh
           /bin/bash deploy/tests/apple-container-test.sh
           /bin/sh deploy/tests/docker-compose-security-test.sh

@@ -163,11 +163,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "Telegram credentials not configured, skipping notification"
+            echo "未配置 Telegram 凭据，跳过通知"
             exit 0
           fi
           image="ghcr.io/${REPOSITORY,,}:$IMAGE_TAG"
-          message="$(printf 'Sub2API %s published\n\ndocker pull %s\n\nhttps://github.com/%s/releases/tag/%s' \
+          message="$(printf 'Sub2API %s 已发布\n\ndocker pull %s\n\nhttps://github.com/%s/releases/tag/%s' \
             "$RELEASE_TAG" "$image" "$REPOSITORY" "$RELEASE_TAG")"
           curl --fail-with-body --silent --show-error \
             -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \

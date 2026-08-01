@@ -644,10 +644,13 @@ import { useAuthStore, useAppStore } from '@/stores'
 import {
   performUpdate,
   restartService,
+  getUpdateStatus,
   getRollbackVersions,
   rollback as rollbackAPI,
+  type UpdateMode,
   type RollbackVersionInfo
 } from '@/api/admin/system'
+import { waitForUpdateActivation } from './updateActivation'
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -683,6 +686,7 @@ const restarting = ref(false)
 const needRestart = ref(false)
 const updateError = ref('')
 const updateSuccess = ref(false)
+const preparedUpdateMode = ref<UpdateMode>()
 const restartCountdown = ref(0)
 // Distinguishes the success + restart panel between update and rollback flows
 const successKind = ref<'update' | 'rollback'>('update')
@@ -757,12 +761,14 @@ async function handleUpdate() {
   updating.value = true
   updateError.value = ''
   updateSuccess.value = false
+  preparedUpdateMode.value = undefined
 
   try {
     const result = await performUpdate()
     successKind.value = 'update'
     updateSuccess.value = true
     needRestart.value = result.need_restart
+    preparedUpdateMode.value = result.update_mode
     // Clear version cache to reflect update completed
     appStore.clearVersionCache()
   } catch (error: unknown) {
@@ -855,9 +861,29 @@ async function handleRestart() {
   restartCountdown.value = 8
 
   try {
-    await restartService()
+    const result = await restartService()
+    if (result.update_mode === 'docker_agent') {
+      const activation = await waitForUpdateActivation(getUpdateStatus)
+      if (activation.outcome === 'healthy') {
+        appStore.clearVersionCache()
+        window.location.reload()
+        return
+      }
+
+      updateError.value = activation.status?.message || t('version.updateFailed')
+      restarting.value = false
+      restartCountdown.value = 0
+      return
+    }
     // Service will restart, page will reload automatically or show disconnected
   } catch (error) {
+    if (preparedUpdateMode.value === 'docker_agent') {
+      const err = error as { response?: { data?: { message?: string } }; message?: string }
+      updateError.value = err.response?.data?.message || err.message || t('version.updateFailed')
+      restarting.value = false
+      restartCountdown.value = 0
+      return
+    }
     // Expected - connection will be lost during restart
     console.log('Service restarting...')
   }
