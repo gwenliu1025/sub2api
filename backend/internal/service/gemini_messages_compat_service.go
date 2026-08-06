@@ -2931,6 +2931,10 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 	if statusCode != 429 {
 		return
 	}
+	if account.IsPoolMode() && !account.IsCustomErrorCodesEnabled() {
+		logger.LegacyPrintf("service.gemini_messages_compat", "[Gemini 429] Account %d is in pool mode, skipping local rate limit", account.ID)
+		return
+	}
 
 	oauthType := account.GeminiOAuthType()
 	tierID := account.GeminiTierID()

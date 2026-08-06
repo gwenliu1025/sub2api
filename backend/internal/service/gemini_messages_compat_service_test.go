@@ -25,6 +25,52 @@ type geminiCompatHTTPUpstreamStub struct {
 	lastReq  *http.Request
 }
 
+type geminiCompatRateLimitRepoStub struct {
+	AccountRepository
+	setRateLimitedCalls int
+}
+
+func (s *geminiCompatRateLimitRepoStub) SetRateLimited(_ context.Context, _ int64, _ time.Time) error {
+	s.setRateLimitedCalls++
+	return nil
+}
+
+func TestGeminiMessagesCompat_HandleUpstream429RespectsPoolMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		poolMode  bool
+		wantCalls int
+	}{
+		{name: "池模式跳过本地限流", poolMode: true, wantCalls: 0},
+		{name: "普通模式保留本地限流", poolMode: false, wantCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &geminiCompatRateLimitRepoStub{}
+			svc := &GeminiMessagesCompatService{accountRepo: repo}
+			account := &Account{
+				ID:       3250,
+				Platform: PlatformGemini,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"pool_mode": tt.poolMode,
+				},
+			}
+
+			svc.handleGeminiUpstreamError(
+				context.Background(),
+				account,
+				http.StatusTooManyRequests,
+				nil,
+				[]byte(`{"error":{"message":"Individual quota reached"}}`),
+			)
+
+			require.Equal(t, tt.wantCalls, repo.setRateLimitedCalls)
+		})
+	}
+}
+
 func (s *geminiCompatHTTPUpstreamStub) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	s.calls++
 	s.lastReq = req
