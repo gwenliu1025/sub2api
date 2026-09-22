@@ -21,7 +21,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # GitHub raw content base URL
-GITHUB_RAW_URL="https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.5/deploy"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.7/deploy"
 
 # Print colored message
 print_info() {
