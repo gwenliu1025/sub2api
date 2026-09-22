@@ -86,7 +86,10 @@ func TestFetchOpenAIAccountModelsOAuthLabelsLocalImageModelsLikeUpstream(t *test
 	newCodexModelsOAuthCacheServer(t, `{"models":[{"slug":"gpt-5.6-sol"}]}`)
 	svc := &AccountTestService{openaiGatewayService: &OpenAIGatewayService{}}
 	account := newCodexModelsTestAccount()
-	account.Credentials["model_mapping"] = map[string]any{"gpt-image-2.5-flare": "gpt-image-2.5-flare"}
+	account.Credentials["model_mapping"] = map[string]any{
+		"gpt-5.6-sol":        "gpt-5.6-sol",
+		"gpt-image-2.5-flare": "gpt-image-2.5-flare",
+	}
 	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
 	require.NoError(t, err)
 	byID := make(map[string]string, len(models))

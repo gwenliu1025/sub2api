@@ -270,6 +270,9 @@ func TestAccountTestService_DeepSeekCustomBaseURLUsesV1ResponsesPath(t *testing.
 			"api_key":      "sk-test",
 			"base_url":     "https://relay.example.com/v1",
 			"api_protocol": APIProtocolResponses,
+			"model_mapping": map[string]any{
+				"gpt-5.4": "gpt-5.4",
+			},
 		},
 		Extra: map[string]any{
 			openai_compat.ExtraKeyResponsesSupported: true,
@@ -304,6 +307,9 @@ func TestAccountTestService_DeepSeekResponsesRoutesToOpenAIProbe(t *testing.T) {
 			"api_key":      "sk-test",
 			"base_url":     "https://relay.example.com/v1",
 			"api_protocol": APIProtocolResponses,
+			"model_mapping": map[string]any{
+				"gpt-5.4": "gpt-5.4",
+			},
 		},
 		Extra: map[string]any{
 			openai_compat.ExtraKeyResponsesSupported: true,
@@ -343,6 +349,9 @@ func TestAccountTestService_DeepSeekDefaultBaseURLUsesNativeResponsesPath(t *tes
 		Credentials: map[string]any{
 			"api_key":      "sk-test",
 			"api_protocol": APIProtocolResponses,
+			"model_mapping": map[string]any{
+				"gpt-5.4": "gpt-5.4",
+			},
 		},
 		Extra: map[string]any{
 			openai_compat.ExtraKeyResponsesSupported: true,
