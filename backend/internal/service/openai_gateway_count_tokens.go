@@ -292,6 +292,20 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 		writeAnthropicCountTokensError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return err
 	}
+	// 与原生Responses计数使用同一中转识别和估算器；预估不进入实际usage结算。
+	if shouldEstimateOpenAIInputTokensLocally(account) {
+		estimated, err := estimateOpenAIInputTokens(prepared.Request)
+		if err != nil {
+			writeAnthropicCountTokensError(c, http.StatusBadRequest, "invalid_request_error", "Failed to estimate input tokens")
+			return fmt.Errorf("count_tokens: estimate custom relay input tokens: %w", err)
+		}
+		logger.L().Debug("openai count_tokens: custom relay local estimate",
+			zap.Int64("account_id", account.ID),
+			zap.Int("estimated_input_tokens", estimated),
+		)
+		c.JSON(http.StatusOK, gin.H{"input_tokens": estimated})
+		return nil
+	}
 
 	upstreamBody, err := marshalOpenAIUpstreamJSON(prepared.Request)
 	if err != nil {

@@ -186,10 +186,15 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	if err != nil {
 		return nil, err
 	}
+	// 复用客户目录的公开名与白名单投影，原始上游缓存保持不变。
+	body, err := projectAccountModelsBody(response.Body, account, nil, false)
+	if err != nil {
+		return nil, fmt.Errorf("project OpenAI account test models: %w", err)
+	}
 	var payload struct {
 		Data []openai.Model `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body, &payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("decode OpenAI account models: %w", err)
 	}
 	// Standard model catalogs do not require the fields used by the admin picker.
@@ -707,9 +712,30 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	mode = normalizeAccountTestMode(mode)
 
 	// Default to openai.DefaultTestModel for OpenAI testing
-	testModelID := modelID
+	testModelID := strings.TrimSpace(modelID)
 	if testModelID == "" {
 		testModelID = openai.DefaultTestModel
+		if !account.IsModelSupported(testModelID) {
+			// 管理CLI允许省略模型；只为本次探针选账号允许的具体名，不写业务默认映射。
+			testModelID = ""
+			for alias, target := range account.GetModelMapping() {
+				for _, candidate := range []string{alias, target} {
+					if candidate == "" || strings.Contains(candidate, "*") || !account.IsModelSupported(candidate) {
+						continue
+					}
+					if testModelID == "" || candidate < testModelID {
+						testModelID = candidate
+					}
+				}
+			}
+			if testModelID == "" {
+				return s.sendErrorAndEnd(c, "No concrete allowed test model; specify model_id")
+			}
+		}
+	}
+	// 在映射和任何上游调用之前检查公开名，直接提交测试也遵守账号白名单。
+	if !account.IsModelSupported(testModelID) {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Model %q is not enabled for this account", testModelID))
 	}
 
 	// Align test routing with gateway behavior: OpenAI accounts apply normal

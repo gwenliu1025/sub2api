@@ -56,10 +56,10 @@ Use the automated preparation script for the easiest setup:
 
 ```bash
 # Download and run the preparation script
-curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.0/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.5/deploy/docker-deploy.sh | bash
 
 # Or download first, then run
-curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.0/deploy/docker-deploy.sh -o docker-deploy.sh
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.5/deploy/docker-deploy.sh -o docker-deploy.sh
 chmod +x docker-deploy.sh
 ./docker-deploy.sh
 ```
@@ -92,7 +92,7 @@ If you prefer manual control:
 
 ```bash
 # Clone repository
-git clone --branch v0.2.0 --depth 1 https://github.com/gwenliu1025/sub2api.git
+git clone --branch v0.2.5 --depth 1 https://github.com/gwenliu1025/sub2api.git
 cd sub2api/deploy
 
 # Configure environment
@@ -100,7 +100,7 @@ cp .env.example .env
 chmod 600 .env
 nano .env  # Set POSTGRES_PASSWORD and other required variables
 # 确认使用 fork 的精确版本镜像：
-grep -Fx 'SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.0' .env
+grep -Fx 'SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.5' .env
 
 # Generate secure secrets (recommended)
 JWT_SECRET=$(openssl rand -hex 32)
@@ -400,12 +400,12 @@ For production servers using systemd.
 ### One-Line Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.0/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.5/deploy/install.sh | sudo bash
 ```
 
 ### Manual Installation
 
-1. Download v0.2.0 from [GitHub Releases](https://github.com/gwenliu1025/sub2api/releases/tag/v0.2.0)
+1. Download v0.2.5 from [GitHub Releases](https://github.com/gwenliu1025/sub2api/releases/tag/v0.2.5)
 2. Extract and copy the binary to `/opt/sub2api/`
 3. Copy `sub2api.service` to `/etc/systemd/system/`
 4. Run:

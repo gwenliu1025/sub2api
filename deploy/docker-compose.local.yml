@@ -24,7 +24,7 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.0}
+    image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.5}
     container_name: sub2api
     restart: unless-stopped
     security_opt:

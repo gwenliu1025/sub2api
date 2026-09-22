@@ -39,7 +39,7 @@ func (r *countTokensRuntimeStateRepo) SetError(_ context.Context, _ int64, _ str
 	return nil
 }
 
-func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesInputTokens(t *testing.T) {
+func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_OfficialAPIKeyUsesResponsesInputTokens(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	rec := httptest.NewRecorder()
@@ -69,7 +69,7 @@ func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesI
 		Concurrency: 1,
 		Credentials: map[string]any{
 			"api_key":  "sk-test",
-			"base_url": "http://upstream.example",
+			"base_url": "https://api.openai.com",
 		},
 		Status:      StatusActive,
 		Schedulable: true,
@@ -80,7 +80,7 @@ func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesI
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{"input_tokens":42}`, rec.Body.String())
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, "http://upstream.example/v1/responses/input_tokens", upstream.lastReq.URL.String())
+	require.Equal(t, "https://api.openai.com/v1/responses/input_tokens", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("authorization"))
 	require.Equal(t, "gpt-5.3-codex", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
