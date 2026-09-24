@@ -81,7 +81,12 @@ func TestAliyunCaptchaVerifier_TransportError(t *testing.T) {
 	verifier, cred := newAliyunCaptchaTestTarget(t, func(w http.ResponseWriter, _ *http.Request) {
 		reached.Store(true)
 		// 保持监听端口独占，接受请求后断连，不发送可被归一化为API错误的响应。
-		conn, _, err := w.(http.Hijacker).Hijack()
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("测试连接不支持Hijack")
+			return
+		}
+		conn, _, err := hijacker.Hijack()
 		if err != nil {
 			t.Errorf("接管测试连接失败: %v", err)
 			return
