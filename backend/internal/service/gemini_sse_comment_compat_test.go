@@ -65,8 +65,10 @@ func runAntigravityGeminiStreamWithIdle(t *testing.T, userAgent string, idle tim
 			c.Request.Header.Set("User-Agent", userAgent)
 		}
 		reader, writer := io.Pipe()
-		defer reader.Close()
-		defer writer.Close()
+		defer func() {
+			_ = writer.Close()
+			_ = reader.Close()
+		}()
 		resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: reader}
 		done := make(chan error, 1)
 		go func() {

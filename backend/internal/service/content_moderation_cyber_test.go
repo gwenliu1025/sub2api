@@ -260,8 +260,9 @@ func TestRecordCyberPolicyEvent_RuntimeSnapshotRefreshFailureKeepsStaleScope(t *
 		SettingKeyRiskControlEnabled:      "true",
 		SettingKeyContentModerationConfig: `{"all_groups":true,"model_filter":{"type":"include","models":["gpt-5"]}}`,
 	}}
-	svc := NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil, nil)
-	svc.runtimeCacheTTL = time.Minute
+	// 只验证事件路径的刷新，避免构造器后台worker抢占刷新锁或增加读库次数。
+	svc := runtimeCacheTestService(settingRepo, time.Minute)
+	svc.repo = repo
 
 	_, err := svc.loadRuntimeSnapshot(context.Background())
 	require.NoError(t, err)

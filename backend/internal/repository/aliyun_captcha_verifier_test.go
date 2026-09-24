@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,8 @@ func newAliyunCaptchaTestTarget(t *testing.T, handler http.HandlerFunc) (*aliyun
 		SceneID:         "scene-1",
 		Endpoint:        strings.TrimPrefix(server.URL, "http://"),
 	}
+	// SDK按含端口的完整主机名匹配NO_PROXY，避免本地夹具误走环境代理。
+	t.Setenv("NO_PROXY", cred.Endpoint)
 	return verifier, cred
 }
 
@@ -74,19 +77,22 @@ func TestAliyunCaptchaVerifier_APIErrorNormalized(t *testing.T) {
 }
 
 func TestAliyunCaptchaVerifier_TransportError(t *testing.T) {
-	server := httptest.NewServer(http.NotFoundHandler())
-	endpoint := strings.TrimPrefix(server.URL, "http://")
-	server.Close() // 立即关闭，制造连接失败
-
-	verifier := &aliyunCaptchaVerifier{protocol: "HTTP", timeoutMillis: 2_000}
-	cred := service.AliyunCaptchaCredentials{
-		AccessKeyID:     "test-ak-id",
-		AccessKeySecret: "test-ak-secret",
-		SceneID:         "scene-1",
-		Endpoint:        endpoint,
-	}
+	var reached atomic.Bool
+	verifier, cred := newAliyunCaptchaTestTarget(t, func(w http.ResponseWriter, _ *http.Request) {
+		reached.Store(true)
+		// 保持监听端口独占，接受请求后断连，不发送可被归一化为API错误的响应。
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("接管测试连接失败: %v", err)
+			return
+		}
+		if err := conn.Close(); err != nil {
+			t.Errorf("关闭测试连接失败: %v", err)
+		}
+	})
 
 	_, err := verifier.VerifyCaptcha(context.Background(), cred, "param")
+	require.True(t, reached.Load(), "请求应直接到达本地断连夹具")
 	require.Error(t, err)
 	var apiErr *service.AliyunCaptchaAPIError
 	require.False(t, errors.As(err, &apiErr), "transport errors must not be normalized to API errors")
