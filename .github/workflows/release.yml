@@ -11,9 +11,13 @@ on:
         required: true
         type: string
 
+# 同仓库发布串行执行，避免并行发布相互覆盖资产。
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   validate_release_version:
@@ -65,6 +69,9 @@ jobs:
   release:
     needs: [validate_release_version, build_frontend]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -105,10 +112,11 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --tags --force
+          DELIMITER="TAG_MESSAGE_$(openssl rand -hex 16)"
           {
-            echo "message<<EOF"
+            echo "message<<$DELIMITER"
             git tag -l --format='%(contents:body)' "$RELEASE_TAG"
-            echo "EOF"
+            echo "$DELIMITER"
           } >> "$GITHUB_OUTPUT"
       - name: Set lowercase GHCR owner
         id: lowercase

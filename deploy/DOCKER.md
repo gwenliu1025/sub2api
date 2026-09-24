@@ -10,7 +10,7 @@ docker run -d \
   -p 8080:8080 \
   -e DATABASE_URL="postgres://user:pass@host:5432/sub2api" \
   -e REDIS_URL="redis://host:6379" \
-  ghcr.io/gwenliu1025/sub2api:0.2.7
+  ghcr.io/gwenliu1025/sub2api:0.2.8
 ```
 
 ## Docker Compose
@@ -20,7 +20,7 @@ version: '3.8'
 
 services:
   sub2api:
-    image: ghcr.io/gwenliu1025/sub2api:0.2.7
+    image: ghcr.io/gwenliu1025/sub2api:0.2.8
     ports:
       - "8080:8080"
     environment:
@@ -79,7 +79,7 @@ Docker restores existing containers after a host restart.
 
 ## Tags
 
-- `0.2.7` - fork 的精确发布版本；不提供浮动别名
+- `0.2.8` - fork 的精确发布版本；不提供浮动别名
 
 ## Links
 

@@ -1183,7 +1183,7 @@ main() {
             echo "  $0                        # Install latest version"
             echo "  $0 install -v v0.1.0      # Install specific version"
             echo "  $0 upgrade                # Upgrade to latest"
-            echo "  $0 upgrade -v v0.2.7      # Upgrade to specific version"
+            echo "  $0 upgrade -v v0.2.8      # Upgrade to specific version"
             echo "  $0 rollback v0.1.0        # Rollback to v0.1.0"
             echo "  $0 list-versions          # List available versions"
             echo ""
