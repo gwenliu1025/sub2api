@@ -101,6 +101,7 @@ describe('channel monitor Grok provider', () => {
 
     expect(PROVIDERS).toContain(PROVIDER_GROK)
     const providerButtons = wrapper.findAll('[data-testid^="monitor-provider-"]')
+    // 当前版本在 MiniMax 之外新增 OpenCode GO，供应商网格共十项。
     expect(providerButtons).toHaveLength(10)
     expect(providerButtons[0].element.parentElement?.className).toContain('grid-cols-2')
     expect(providerButtons[0].element.parentElement?.className).toContain('sm:grid-cols-4')
