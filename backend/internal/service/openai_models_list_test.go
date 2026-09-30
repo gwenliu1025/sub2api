@@ -346,3 +346,37 @@ func TestOpenAIModelsCacheSeparatesRepresentationsForIdenticalRequests(t *testin
 	require.JSONEq(t, manifestBody, string(manifest.Body))
 	require.EqualValues(t, 2, calls.Load())
 }
+
+func TestOpenAIModelsCacheRefreshRechecksFreshEntryAfterMiss(t *testing.T) {
+	for _, standardModelsList := range []bool{false, true} {
+		name, body := "manifest", `{"models":[{"slug":"shared"}]}`
+		if standardModelsList {
+			name, body = "standard", `{"object":"list","data":[{"id":"shared"}]}`
+		}
+		t.Run(name, func(t *testing.T) {
+			s := &OpenAIGatewayService{}
+			request := openAIModelsRequest{
+				url: "https://models.example/v1/models", accountID: 7,
+				standardModelsList: standardModelsList,
+			}
+			cacheKey := buildOpenAIModelsCacheKey(request)
+			_, state := s.openAIModelsCache.get(cacheKey, time.Now())
+			require.Equal(t, openAIModelsCacheMiss, state)
+			var calls atomic.Int32
+			fetch := func(context.Context, string) (*OpenAIModelsResponse, error) {
+				calls.Add(1)
+				return &OpenAIModelsResponse{Body: []byte(body)}, nil
+			}
+
+			// 固定竞态窗口：另一请求在本请求缓存未命中后、进入共享刷新前已填充缓存。
+			_, err := s.fetchCachedOpenAIModels(context.Background(), request, fetch, "")
+			require.NoError(t, err)
+			result := <-s.refreshCachedOpenAIModels(cacheKey, request, fetch)
+			require.NoError(t, result.Err)
+			manifest, ok := result.Val.(*OpenAIModelsResponse)
+			require.True(t, ok)
+			require.JSONEq(t, body, string(manifest.Body))
+			require.EqualValues(t, 1, calls.Load())
+		})
+	}
+}
