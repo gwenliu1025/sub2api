@@ -56,10 +56,10 @@ Use the automated preparation script for the easiest setup:
 
 ```bash
 # Download and run the preparation script
-curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.11/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.15/deploy/docker-deploy.sh | bash
 
 # Or download first, then run
-curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.11/deploy/docker-deploy.sh -o docker-deploy.sh
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.15/deploy/docker-deploy.sh -o docker-deploy.sh
 chmod +x docker-deploy.sh
 ./docker-deploy.sh
 ```
@@ -79,8 +79,8 @@ docker compose up -d
 # View logs
 docker compose logs -f sub2api
 
-# If admin password was auto-generated, find it in logs:
-docker compose logs sub2api | grep "admin password"
+# 自动生成管理员邮箱与密码时，从日志中查询：
+docker compose logs sub2api | grep "Generated admin"
 
 # Access Web UI
 # http://localhost:8080
@@ -92,7 +92,7 @@ If you prefer manual control:
 
 ```bash
 # Clone repository
-git clone --branch v0.2.11 --depth 1 https://github.com/gwenliu1025/sub2api.git
+git clone --branch v0.2.15 --depth 1 https://github.com/gwenliu1025/sub2api.git
 cd sub2api/deploy
 
 # Configure environment
@@ -100,7 +100,7 @@ cp .env.example .env
 chmod 600 .env
 nano .env  # Set POSTGRES_PASSWORD and other required variables
 # 确认使用 fork 的精确版本镜像：
-grep -Fx 'SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.11' .env
+grep -Fx 'SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.15' .env
 
 # Generate secure secrets (recommended)
 JWT_SECRET=$(openssl rand -hex 32)
@@ -114,7 +114,7 @@ mkdir -p data postgres_data redis_data
 # Start all services using local directory version
 docker compose -f docker-compose.local.yml up -d
 
-# View logs (check for auto-generated admin password)
+# View logs (check for auto-generated admin email and password)
 docker compose -f docker-compose.local.yml logs -f sub2api
 
 # Access Web UI
@@ -138,14 +138,14 @@ When using Docker Compose with `AUTO_SETUP=true`:
    - Connects to PostgreSQL and Redis
    - Applies database migrations (SQL files in `backend/migrations/*.sql`) and records them in `schema_migrations`
    - Generates JWT secret (if not provided)
-   - Creates admin account (password auto-generated if not provided)
+   - Creates admin account (email and password auto-generated if not provided; a provided password must be 8-72 bytes)
    - Writes config.yaml
 
 2. No manual Setup Wizard needed - just configure `.env` and start
 
-3. If `ADMIN_PASSWORD` is not set, check logs for the generated password:
+3. If `ADMIN_EMAIL` / `ADMIN_PASSWORD` are not set, check logs for the generated admin email (login username) and password:
    ```bash
-   docker compose logs sub2api | grep "admin password"
+   docker compose logs sub2api | grep "Generated admin"
    ```
 
 ### Startup and Database Recovery
@@ -259,8 +259,8 @@ docker compose down -v
 | `JWT_SECRET` | **Recommended** | *(auto-generated)* | JWT secret (fixed for persistent sessions) |
 | `TOTP_ENCRYPTION_KEY` | **Recommended** | *(auto-generated)* | TOTP encryption key (fixed for persistent 2FA) |
 | `SERVER_PORT` | No | `8080` | Server port |
-| `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
-| `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |
+| `ADMIN_EMAIL` | No | *(auto-generated)* | Admin email (login username) |
+| `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password (8-72 bytes) |
 | `TZ` | No | `Asia/Shanghai` | Timezone |
 | `UPDATE_GITHUB_TOKEN` | No | *(empty)* | Token for `api.github.com` release checks only; asset downloads remain anonymous. |
 | `GEMINI_OAUTH_CLIENT_ID` | No | *(builtin)* | Google OAuth client ID (Gemini OAuth). Leave empty to use the built-in Gemini CLI client. |
@@ -400,12 +400,12 @@ For production servers using systemd.
 ### One-Line Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.11/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.15/deploy/install.sh | sudo bash
 ```
 
 ### Manual Installation
 
-1. Download v0.2.11 from [GitHub Releases](https://github.com/gwenliu1025/sub2api/releases/tag/v0.2.11)
+1. Download v0.2.15 from [GitHub Releases](https://github.com/gwenliu1025/sub2api/releases/tag/v0.2.15)
 2. Extract and copy the binary to `/opt/sub2api/`
 3. Copy `sub2api.service` to `/etc/systemd/system/`
 4. Run:
