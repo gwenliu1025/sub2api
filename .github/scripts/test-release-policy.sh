@@ -107,10 +107,69 @@ require_contains "$goreleaser" '      - darwin'
 require_contains "$goreleaser" '      - amd64'
 require_contains "$goreleaser" '      - arm64'
 require_contains "$goreleaser" 'goos: windows'
-require_contains "$goreleaser" 'format: zip'
+require_contains "$goreleaser" 'formats: [tar.gz]'
+require_contains "$goreleaser" 'formats: [zip]'
 require_contains "$goreleaser" 'name_template: checksums.txt'
 require_contains "$goreleaser" '> AI API 网关平台'
 require_contains "$goreleaser" '## 文档'
+
+# 来源验收属于发布前的构建门，既不能关闭，也不能只检查启动时的 Git 快照。
+gate=".github/scripts/verify-release-binary.sh"
+require_file "$gate"
+require_contains "$goreleaser" '    - go -C backend mod verify'
+require_absent "$goreleaser" 'go mod tidy'
+require_contains "$goreleaser" '      - -mod=readonly'
+require_contains "$goreleaser" "        - cmd: bash $gate '{{ .Path }}' '{{ .FullCommit }}' '{{ .Os }}' '{{ .Arch }}'"
+require_contains "$workflow" '          args: release --clean'
+require_absent "$workflow" '--skip=validate'
+require_absent "$workflow" '--skip=hooks'
+require_absent "$goreleaser" '-buildvcs=false'
+
+# 隔离工具输出验证正反例，不改真实源码、依赖或 Git 状态。
+fixture_dir="$(mktemp -d)"
+trap 'rm -f -- "$fixture_dir/go" "$fixture_dir/git"; rmdir -- "$fixture_dir"' EXIT
+cat > "$fixture_dir/go" <<'EOF'
+#!/usr/bin/env bash
+[[ "${FIXTURE_GO_EXIT:-0}" == 0 ]] || exit "$FIXTURE_GO_EXIT"
+printf '%s\n' "$FIXTURE_INFO"
+EOF
+cat > "$fixture_dir/git" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  'rev-parse --show-toplevel') printf '%s\n' "$FIXTURE_ROOT" ;;
+  'rev-parse HEAD') printf '%s\n' "$FIXTURE_HEAD" ;;
+  'status --porcelain') printf '%s' "${FIXTURE_STATUS:-}" ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$fixture_dir/go" "$fixture_dir/git"
+fixture_commit=1111111111111111111111111111111111111111
+other_commit=2222222222222222222222222222222222222222
+fixture_go="$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
+fixture_grpc="$(awk '$1 == "google.golang.org/grpc" { print $2; exit }' backend/go.mod)"
+fixture_info="$(printf 'sub2api:\tgo%s\n\tdep\tgoogle.golang.org/grpc\t%s\th1:fixture\n\tbuild\t-ldflags="-X main.Commit=%s -X main.BuildType=release"\n\tbuild\t-tags=embed\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=amd64\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n' "$fixture_go" "$fixture_grpc" "$fixture_commit" "$fixture_commit")"
+
+check_gate_case() {
+  local name="$1" expected="$2" info="$3" status="${4:-}" head="${5:-$fixture_commit}" go_exit="${6:-0}" code=0 output
+  output="$(PATH="$fixture_dir:$PATH" FIXTURE_ROOT="$PWD" FIXTURE_INFO="$info" FIXTURE_HEAD="$head" FIXTURE_STATUS="$status" FIXTURE_GO_EXIT="$go_exit" \
+    bash "$gate" fixture.bin "$fixture_commit" linux amd64 2>&1)" || code=$?
+  if [[ "$expected" == pass && "$code" != 0 ]] || [[ "$expected" == fail && "$code" == 0 ]]; then
+    fail "release binary gate: $name (exit=$code): $output"
+  fi
+}
+
+check_gate_case clean pass "$fixture_info"
+check_gate_case dirty_worktree fail "$fixture_info" ' M backend/go.sum'
+check_gate_case wrong_head fail "$fixture_info" '' "$other_commit"
+check_gate_case wrong_revision fail "${fixture_info/vcs.revision=$fixture_commit/vcs.revision=$other_commit}"
+check_gate_case dirty_binary fail "${fixture_info/vcs.modified=false/vcs.modified=true}"
+check_gate_case missing_dirty_flag fail "${fixture_info/$'\tbuild\tvcs.modified=false'/}"
+check_gate_case wrong_app_commit fail "${fixture_info/main.Commit=$fixture_commit/main.Commit=$other_commit}"
+check_gate_case wrong_platform fail "${fixture_info/GOOS=linux/GOOS=windows}"
+check_gate_case wrong_go fail "${fixture_info/go$fixture_go/go0.0.0}"
+check_gate_case wrong_grpc fail "${fixture_info/$fixture_grpc/v0.0.0}"
+check_gate_case missing_embed fail "${fixture_info/-tags=embed/-tags=unit}"
+check_gate_case buildinfo_failure fail "$fixture_info" '' "$fixture_commit" 7
 
 for compose in $compose_files; do
   require_contains "$compose" 'image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.15}'

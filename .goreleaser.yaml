@@ -4,7 +4,8 @@ project_name: sub2api
 
 before:
   hooks:
-    - go mod tidy -C backend
+    # 发布只验证已提交依赖；tidy 应在开发阶段完成，避免构建来源变脏。
+    - go -C backend mod verify
 
 builds:
   - id: sub2api
@@ -13,6 +14,10 @@ builds:
     binary: sub2api
     flags:
       - -tags=embed
+      - -mod=readonly
+    hooks:
+      post:
+        - cmd: bash .github/scripts/verify-release-binary.sh '{{ .Path }}' '{{ .FullCommit }}' '{{ .Os }}' '{{ .Arch }}'
     env:
       - CGO_ENABLED=0
     goos:
@@ -33,12 +38,12 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - LICENSE*
       - README*

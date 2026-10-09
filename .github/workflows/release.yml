@@ -139,7 +139,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --clean --skip=validate
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
