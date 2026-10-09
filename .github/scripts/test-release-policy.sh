@@ -147,7 +147,7 @@ fixture_commit=1111111111111111111111111111111111111111
 other_commit=2222222222222222222222222222222222222222
 fixture_go="$(awk '$1 == "go" { print $2; exit }' backend/go.mod)"
 fixture_grpc="$(awk '$1 == "google.golang.org/grpc" { print $2; exit }' backend/go.mod)"
-fixture_info="$(printf 'sub2api:\tgo%s\n\tdep\tgoogle.golang.org/grpc\t%s\th1:fixture\n\tbuild\t-ldflags="-X main.Commit=%s -X main.BuildType=release"\n\tbuild\t-tags=embed\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=amd64\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n' "$fixture_go" "$fixture_grpc" "$fixture_commit" "$fixture_commit")"
+fixture_info="$(printf 'sub2api: go%s\n\tdep\tgoogle.golang.org/grpc\t%s\th1:fixture\n\tbuild\t-ldflags="-X main.Commit=%s -X main.BuildType=release"\n\tbuild\t-tags=embed\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=amd64\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n' "$fixture_go" "$fixture_grpc" "$fixture_commit" "$fixture_commit")"
 
 check_gate_case() {
   local name="$1" expected="$2" info="$3" status="${4:-}" head="${5:-$fixture_commit}" go_exit="${6:-0}" code=0 output
@@ -167,6 +167,7 @@ check_gate_case missing_dirty_flag fail "${fixture_info/$'\tbuild\tvcs.modified=
 check_gate_case wrong_app_commit fail "${fixture_info/main.Commit=$fixture_commit/main.Commit=$other_commit}"
 check_gate_case wrong_platform fail "${fixture_info/GOOS=linux/GOOS=windows}"
 check_gate_case wrong_go fail "${fixture_info/go$fixture_go/go0.0.0}"
+check_gate_case wrong_go_suffix fail "${fixture_info/go$fixture_go/go${fixture_go}0}"
 check_gate_case wrong_grpc fail "${fixture_info/$fixture_grpc/v0.0.0}"
 check_gate_case missing_embed fail "${fixture_info/-tags=embed/-tags=unit}"
 check_gate_case buildinfo_failure fail "$fixture_info" '' "$fixture_commit" 7

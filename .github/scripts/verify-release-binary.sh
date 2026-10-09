@@ -22,7 +22,7 @@ info="$(go version -m "$binary")"
 go_version="$(awk '$1 == "go" { print $2; exit }' "$root/backend/go.mod")"
 grpc_version="$(awk '$1 == "google.golang.org/grpc" { print $2; exit }' "$root/backend/go.mod")"
 [[ -n "$go_version" && -n "$grpc_version" ]] || fail '源码缺少工具链或 gRPC 版本'
-[[ "${info%%$'\n'*}" == *$'\t'"go$go_version" ]] || fail 'Go 版本不匹配'
+[[ "${info%%$'\n'*}" == *": go$go_version" ]] || fail 'Go 版本不匹配'
 [[ "$(awk -F '\t' '$2 == "dep" && $3 == "google.golang.org/grpc" { print $4 }' <<< "$info")" == "$grpc_version" ]] || fail 'gRPC 版本不匹配'
 
 require_build_setting() {
