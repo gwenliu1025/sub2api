@@ -1,6 +1,8 @@
 name: Security Scan
 
 on:
+  # 手动入口复用原验证任务，保持同一套门禁与权限。
+  workflow_dispatch:
   push:
   pull_request:
   schedule:
