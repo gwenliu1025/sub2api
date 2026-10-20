@@ -375,3 +375,119 @@ func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
 	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
 	require.Contains(t, err.Error(), "no compatible release found")
 }
+
+// 四段仅属于应用更新链，不改变 Claude/Codex 客户端版本规则。
+func TestUpdateServiceCompareVersionsForkRevision(t *testing.T) {
+	cases := []struct {
+		current string
+		latest  string
+		want    int
+	}{
+		{"0.2.17", "0.2.17.1", -1},
+		{"0.2.17.1", "0.2.17.2", -1},
+		{"0.2.17.2", "0.2.17.10", -1},
+		{"0.2.17.10", "0.2.18", -1},
+		{"0.2.17.10", "0.3.0", -1},
+		{"0.2.17.10", "1.0.0", -1},
+		{"0.2.17", "0.2.17.0", 0},
+		{"0.2.17.1", "0.2.17.1", 0},
+		{"v0.2.17.1", "0.2.17.1", 0},
+		{"v0.2.17-legacy", "0.2.17", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.current+"_"+tc.latest, func(t *testing.T) {
+			require.Equal(t, tc.want, compareVersions(tc.current, tc.latest))
+			require.Equal(t, -tc.want, compareVersions(tc.latest, tc.current))
+		})
+	}
+}
+
+func TestUpdateServiceForkRevisionLiveAndCachedUpdate(t *testing.T) {
+	cases := []struct {
+		current   string
+		latest    string
+		hasUpdate bool
+	}{
+		{"0.2.17", "0.2.17.1", true},
+		{"0.2.17.2", "0.2.17.10", true},
+		{"0.2.17.10", "0.2.18", true},
+		{"0.2.17.1", "0.2.17.1", false},
+		{"0.2.17.10", "0.2.17.2", false},
+		{"0.2.18", "0.2.17.10", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.current+"_"+tc.latest, func(t *testing.T) {
+			for _, cached := range []bool{false, true} {
+				cache := &updateServiceCacheStub{}
+				if cached {
+					cache.data = `{"latest":"` + tc.latest + `","repo":"gwenliu1025/sub2api","timestamp":32503680000}`
+				}
+				client := &updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v" + tc.latest}}
+				svc := NewUpdateService(cache, client, defaultGitHubRepo, tc.current, "release", config.UpdateModeDockerAgent, &recordingUpdateAgentClient{})
+				info, err := svc.CheckUpdate(context.Background(), !cached)
+				require.NoError(t, err)
+				require.Equal(t, tc.hasUpdate, info.HasUpdate)
+				require.Equal(t, tc.latest, info.LatestVersion)
+				require.Equal(t, cached, info.Cached)
+				if cached {
+					require.Zero(t, client.calls)
+				} else {
+					require.Equal(t, 1, client.calls)
+				}
+			}
+		})
+	}
+}
+
+func TestUpdateServiceDockerAgentPreparesFullForkRevision(t *testing.T) {
+	client := &updateServiceGitHubClientStub{release: &GitHubRelease{TagName: "v0.2.17.1"}}
+	agent := &recordingUpdateAgentClient{prepareStatus: &UpdateAgentStatus{State: UpdateAgentPrepared}}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, defaultGitHubRepo, "0.2.17", "release", config.UpdateModeDockerAgent, agent)
+	require.NoError(t, svc.PerformUpdate(context.Background()))
+	require.Equal(t, []string{"0.2.17.1"}, agent.prepared)
+}
+
+func TestUpdateServiceForkRevisionRollbackCandidatesAndPrepare(t *testing.T) {
+	releases := []*GitHubRelease{
+		{TagName: "v0.2.17.1"},
+		{TagName: "v0.2.17"},
+		{TagName: "v0.2.18"},
+		{TagName: "v0.2.17.10"},
+		{TagName: "v0.2.17.2"},
+		{TagName: "v0.2.16"},
+		{TagName: "v0.2.17.1"},
+		{TagName: "v0.2.17.11"},
+		{TagName: "v0.2.17.9", Draft: true},
+		{TagName: "v0.2.17.8", Prerelease: true},
+	}
+	cases := []struct {
+		current  string
+		want     []string
+		rejected []string
+	}{
+		{"0.2.17.11", []string{"0.2.17.10", "0.2.17.2", "0.2.17.1"}, []string{"0.2.17.11", "0.2.18", "0.2.17", "0.2.17.9", "0.2.17.8"}},
+		{"0.2.17.2", []string{"0.2.17.1", "0.2.17", "0.2.16"}, []string{"0.2.17.2", "0.2.17.10", "0.2.18"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.current, func(t *testing.T) {
+			client := &updateServiceGitHubClientStub{recentReleases: releases}
+			agent := &recordingUpdateAgentClient{prepareStatus: &UpdateAgentStatus{State: UpdateAgentPrepared}}
+			svc := NewUpdateService(&updateServiceCacheStub{}, client, defaultGitHubRepo, tc.current, "release", config.UpdateModeDockerAgent, agent)
+			versions, err := svc.ListRollbackVersions(context.Background())
+			require.NoError(t, err)
+			got := make([]string, 0, len(versions))
+			for _, version := range versions {
+				got = append(got, version.Version)
+			}
+			require.Equal(t, tc.want, got)
+			for _, target := range tc.rejected {
+				require.ErrorIs(t, svc.RollbackToVersion(context.Background(), target), ErrRollbackVersionNotAllowed)
+			}
+			require.Empty(t, agent.prepared)
+			for _, target := range tc.want {
+				require.NoError(t, svc.RollbackToVersion(context.Background(), "v"+target))
+			}
+			require.Equal(t, tc.want, agent.prepared)
+		})
+	}
+}

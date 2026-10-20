@@ -123,6 +123,11 @@ jobs:
         env:
           OWNER: ${{ github.repository_owner }}
         run: echo "owner=${OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Preflight immutable release and image
+        run: python3 -B .github/scripts/release.py --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --preflight-only
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate_release_version.outputs.release_tag }}
       - name: Build and publish official GHCR image
         uses: docker/build-push-action@v6
         with:
@@ -136,12 +141,10 @@ jobs:
             COMMIT=${{ steps.revision.outputs.sha }}
             OCI_SOURCE=https://github.com/${{ github.repository }}
       - name: Create GitHub Release assets
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: "~> v2"
-          args: release --clean
+        run: python3 -B .github/scripts/release.py --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.validate_release_version.outputs.release_tag }}
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_OWNER_LOWER: ${{ steps.lowercase.outputs.owner }}

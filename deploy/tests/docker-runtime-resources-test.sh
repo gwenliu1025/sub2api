@@ -36,8 +36,16 @@ test -s backend/resources/model-pricing/model_prices_and_context_window.json || 
 
 assert_line Dockerfile 'COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources'
 assert_line deploy/Dockerfile 'COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources'
-assert_absent .goreleaser.yaml 'dockers:'
-assert_absent .goreleaser.yaml 'docker_manifests:'
+test ! -e .goreleaser.yaml || fail 'obsolete .goreleaser.yaml must be removed'
+# 发布执行器只读检查镜像；拒绝实际 Python argv 形状的镜像写命令。
+assert_absent .github/scripts/release.py '["docker", "build"'
+assert_absent .github/scripts/release.py '["docker", "buildx", "build"'
+assert_absent .github/scripts/release.py '["docker", "push"'
+assert_absent .github/scripts/release.py '["docker", "image", "build"'
+assert_absent .github/scripts/release.py '["docker", "image", "push"'
+assert_absent .github/scripts/release.py '["docker", "manifest", "create"'
+assert_absent .github/scripts/release.py '["docker", "manifest", "push"'
+assert_absent .github/scripts/release.py '["docker", "buildx", "imagetools", "create"'
 test ! -e Dockerfile.goreleaser || fail 'obsolete Dockerfile.goreleaser must be removed'
 test ! -e .goreleaser.simple.yaml || fail 'obsolete .goreleaser.simple.yaml must be removed'
 

@@ -4,8 +4,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -508,4 +510,199 @@ func TestListGroups_TimePricingPassthrough(t *testing.T) {
 	require.InDelta(t, 0.5, m.TimePricing.Periods[0].Multiplier, 1e-12)
 	// 展示单价为标准时段价
 	require.InDelta(t, 0.28e-6, *m.Pricing.InputPrice, 1e-15)
+}
+
+func TestPlazaRMBOfficialPricing_ExactCatalog(t *testing.T) {
+	for _, tc := range []struct {
+		model                    string
+		input, output, cacheRead float64
+	}{
+		{"deepseek-v4-flash", 1, 4, 0.02},
+		{"deepseek-v4.1-flash", 1, 4, 0.02},
+		{"deepseek-v4-pro", 4.5, 13.5, 0.15},
+		{"glm-5.2", 8, 28, 2},
+		{"glm-5.3", 8, 28, 2},
+		{"glm-5.3-flash", 0.8, 2.8, 0.23},
+		{"kimi-k3", 20, 100, 2},
+		{"minimax-m3", 2.1, 8.4, 0.42},
+		{"hy3", 1, 4, 0.25},
+		{"hy4", 6, 18, 0.3},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			got := plazaRMBOfficialPricing(tc.model)
+			require.NotNil(t, got)
+			// 实际参考入口必须优先采用人民币目录，而不是回到原美元计费目录。
+			svc := newPlazaServiceWithBilling(nil, nil, nil, nil)
+			require.Equal(t, got, svc.lookupOfficialPricing(context.Background(), tc.model, make(map[string]*PlazaOfficialPricing)))
+			require.InDelta(t, tc.input/1e6, *got.InputPrice, 1e-15)
+			require.InDelta(t, tc.output/1e6, *got.OutputPrice, 1e-15)
+			require.InDelta(t, tc.cacheRead/1e6, *got.CacheReadPrice, 1e-15)
+			require.Nil(t, got.CacheWritePrice)
+			require.Nil(t, got.CacheWrite1hPrice)
+			if tc.model != "minimax-m3" {
+				require.Empty(t, got.Intervals)
+				return
+			}
+			require.Len(t, got.Intervals, 2)
+			for i, iv := range got.Intervals {
+				factor := float64(i + 1)
+				require.InDelta(t, factor*tc.input/1e6, *iv.InputPrice, 1e-15)
+				require.InDelta(t, factor*tc.output/1e6, *iv.OutputPrice, 1e-15)
+				require.InDelta(t, factor*tc.cacheRead/1e6, *iv.CacheReadPrice, 1e-15)
+				require.Nil(t, iv.CacheWritePrice)
+				require.Nil(t, iv.CacheWrite1hPrice)
+				require.Nil(t, iv.PerRequestPrice)
+				require.Equal(t, i, iv.SortOrder)
+			}
+			require.Equal(t, 0, got.Intervals[0].MinTokens)
+			require.Equal(t, 512000, *got.Intervals[0].MaxTokens)
+			require.Equal(t, "≤512K", got.Intervals[0].TierLabel)
+			require.Equal(t, 512000, got.Intervals[1].MinTokens)
+			require.Nil(t, got.Intervals[1].MaxTokens)
+			require.Equal(t, ">512K", got.Intervals[1].TierLabel)
+		})
+	}
+	for _, model := range []string{"", "unknown", "gpt-5.4", "hy4-preview", "KIMI-K3", "kimi-k3-extra", " deepseek-v4-pro", "deepseek-v4.1-flash-260910"} {
+		t.Run("unmatched/"+model, func(t *testing.T) { require.Nil(t, plazaRMBOfficialPricing(model)) })
+	}
+}
+
+func TestListPlazaGroups_AllowlistUsesAdmissionRules(t *testing.T) {
+	models := []string{"deepseek-v4-pro", "glm-5.3", "glm-5.3-flash", "kimi-k3"}
+	for _, tc := range []struct {
+		name      string
+		allowlist GroupModelAllowlist
+		want      []string
+	}{
+		{"disabled", GroupModelAllowlist{Models: []string{"absent"}}, models},
+		{"exact", GroupModelAllowlist{Enabled: true, Models: []string{"kimi-k3", "glm-5.3", "glm-5.3-flash"}}, models[1:]},
+		{"wildcard", GroupModelAllowlist{Enabled: true, Models: []string{"GLM-*"}}, models[1:3]},
+		{"all", GroupModelAllowlist{Enabled: true, Models: []string{"*"}}, models},
+		{"all-filtered", GroupModelAllowlist{Enabled: true, Models: []string{"absent"}}, nil},
+		{"enabled-empty", GroupModelAllowlist{Enabled: true}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := plazaPricedChannel(1, "ch", []int64{10}, PlatformOpenAI, models...)
+			groups := []Group{{ID: 10, Platform: PlatformOpenAI, ModelAllowlist: tc.allowlist}}
+			got, err := newPlazaService([]Channel{ch}, groups, nil).ListGroups(context.Background())
+			require.NoError(t, err)
+			if len(tc.want) == 0 {
+				require.Empty(t, got, "过滤后无模型的分组不应展示")
+				return
+			}
+			require.Len(t, got, 1)
+			names := make([]string, 0, len(got[0].Models))
+			for _, model := range got[0].Models {
+				names = append(names, model.Name)
+				require.True(t, tc.allowlist.Allows(model.Name))
+			}
+			require.Equal(t, tc.want, names)
+		})
+	}
+}
+
+func TestListPlazaGroups_RMBReferenceIndependentOfSalesAndRequests(t *testing.T) {
+	ctx := context.Background()
+	ch := plazaPricedChannel(1, "ch", []int64{10, 20}, PlatformOpenAI, "minimax-m3")
+	ch.ModelPricing[0].CacheReadPrice = testPtrFloat64(0.84e-6)
+	groups := []Group{
+		{ID: 10, Platform: PlatformOpenAI, RateMultiplier: 0.08, LongContextPricingEnabled: true},
+		{ID: 20, Platform: PlatformOpenAI, RateMultiplier: 0.12, ModelPricing: []ChannelModelPricing{{
+			Models: []string{"minimax-m3"}, BillingMode: BillingModeToken,
+			InputPrice: testPtrFloat64(9e-6), OutputPrice: testPtrFloat64(33e-6), CacheReadPrice: testPtrFloat64(2e-6),
+		}}},
+	}
+	svc := newPlazaServiceWithBilling([]Channel{ch}, groups, map[int64]string{10: PlatformOpenAI, 20: PlatformOpenAI}, nil)
+	configBefore, err := json.Marshal([]any{ch.ModelPricing, groups})
+	require.NoError(t, err)
+	beforeChannel := *ch.ModelPricing[0].InputPrice
+	beforeGroup := *groups[1].ModelPricing[0].InputPrice
+	inputs := make([]CostInput, 0, len(groups))
+	before := make([]*CostBreakdown, 0, len(groups))
+	for i := range groups {
+		g := &groups[i]
+		in := CostInput{Ctx: ctx, Model: "minimax-m3", GroupID: &g.ID, Group: g,
+			Tokens:         UsageTokens{InputTokens: 1000, OutputTokens: 2000, CacheReadTokens: 500},
+			RateMultiplier: g.RateMultiplier, Resolver: svc.resolver,
+			PricingAt: time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)}
+		cost, err := svc.billingService.CalculateCostUnified(in)
+		require.NoError(t, err)
+		inputs, before = append(inputs, in), append(before, cost)
+	}
+	got, err := svc.ListGroups(ctx)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.InDelta(t, (0.003+0.03+0.00042)*0.08, before[0].ActualCost, 1e-15)
+	require.InDelta(t, (0.009+0.066+0.001)*0.12, before[1].ActualCost, 1e-15)
+	for i, group := range got {
+		m := group.Models[0]
+		require.InDelta(t, 2.1e-6, *m.OfficialPricing.InputPrice, 1e-15)
+		require.Len(t, m.OfficialPricing.Intervals, 2, "官方阶梯不受销售分组开关影响")
+		require.Nil(t, m.OfficialPricing.CacheWritePrice)
+		after, err := svc.billingService.CalculateCostUnified(inputs[i])
+		require.NoError(t, err)
+		require.Equal(t, before[i], after, "读取官方参考不得改变实际计费")
+	}
+	require.InDelta(t, 3e-6, *got[0].Models[0].Pricing.InputPrice, 1e-15)
+	require.InDelta(t, 9e-6, *got[1].Models[0].Pricing.InputPrice, 1e-15)
+	require.Equal(t, beforeChannel, *ch.ModelPricing[0].InputPrice)
+	require.Equal(t, beforeGroup, *groups[1].ModelPricing[0].InputPrice)
+	configAfter, err := json.Marshal([]any{ch.ModelPricing, groups})
+	require.NoError(t, err)
+	require.Equal(t, configBefore, configAfter, "完整销售价卡与分组配置不得被参考解析改写")
+
+	// 返回字段和区间属于本次请求；修改它们不污染目录或下一次请求。
+	first := got[0].Models[0].OfficialPricing
+	*first.InputPrice = 999
+	*first.Intervals[0].InputPrice = 999
+	*first.Intervals[0].MaxTokens = 1
+	next, err := svc.ListGroups(ctx)
+	require.NoError(t, err)
+	second := next[0].Models[0].OfficialPricing
+	require.NotSame(t, first, second)
+	require.InDelta(t, 2.1e-6, *second.InputPrice, 1e-15)
+	require.InDelta(t, 2.1e-6, *second.Intervals[0].InputPrice, 1e-15)
+	require.Equal(t, 512000, *second.Intervals[0].MaxTokens)
+}
+
+func TestPlazaRMBReferenceDoesNotChangeDefaultBilling(t *testing.T) {
+	// HY 不在内置兜底中，显式提供计费目录；人民币参考不能覆盖目录中的美元值。
+	catalog := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"hy3": {Mode: "chat", InputCostPerToken: 0.1e-6, OutputCostPerToken: 0.4e-6, CacheReadInputTokenCost: 0.025e-6},
+		"hy4": {Mode: "chat", InputCostPerToken: 0.6e-6, OutputCostPerToken: 1.8e-6, CacheReadInputTokenCost: 0.03e-6},
+	})
+	svc := newPlazaServiceWithBilling(nil, nil, nil, catalog)
+	for _, model := range []string{"deepseek-v4-flash", "deepseek-v4.1-flash", "deepseek-v4-pro", "glm-5.2", "glm-5.3", "glm-5.3-flash", "kimi-k3", "minimax-m3", "hy3", "hy4"} {
+		t.Run(model, func(t *testing.T) {
+			input := CostInput{Ctx: context.Background(), Model: model, Resolver: svc.resolver,
+				Tokens: UsageTokens{InputTokens: 1000, OutputTokens: 1000, CacheReadTokens: 1000}, RateMultiplier: 0.08,
+				PricingAt: time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)}
+			before, beforeErr := svc.billingService.CalculateCostUnified(input)
+			require.NoError(t, beforeErr)
+			memo := make(map[string]*PlazaOfficialPricing)
+			reference := svc.lookupOfficialPricing(context.Background(), model, memo)
+			require.NotNil(t, reference)
+			require.Same(t, reference, svc.lookupOfficialPricing(context.Background(), model, memo))
+			after, afterErr := svc.billingService.CalculateCostUnified(input)
+			require.Equal(t, beforeErr, afterErr)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestPlazaRMBReferenceDoesNotSupplyMissingBillingPrice(t *testing.T) {
+	svc := newPlazaServiceWithBilling(nil, nil, nil, nil)
+	for _, model := range []string{"hy3", "hy4"} {
+		t.Run(model, func(t *testing.T) {
+			input := CostInput{Ctx: context.Background(), Model: model, Resolver: svc.resolver,
+				Tokens: UsageTokens{InputTokens: 1000}, RateMultiplier: 1}
+			before, beforeErr := svc.billingService.CalculateCostUnified(input)
+			require.Error(t, beforeErr)
+			require.Nil(t, before)
+			require.NotNil(t, svc.lookupOfficialPricing(context.Background(), model, make(map[string]*PlazaOfficialPricing)))
+			after, afterErr := svc.billingService.CalculateCostUnified(input)
+			require.EqualError(t, afterErr, beforeErr.Error())
+			require.Nil(t, after, "展示参考存在不代表补入了销售计费兜底")
+		})
+	}
 }

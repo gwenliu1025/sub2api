@@ -18,6 +18,8 @@ jobs:
         run: |
           /bin/bash .github/scripts/test-validate-release-version.sh
           /bin/bash .github/scripts/test-release-policy.sh
+          python3 -B .github/scripts/test_release.py
+          /bin/bash deploy/tests/install-version-test.sh
           /bin/bash -n deploy/apple-container.sh
           /bin/bash deploy/tests/apple-container-test.sh
           /bin/sh deploy/tests/docker-compose-security-test.sh

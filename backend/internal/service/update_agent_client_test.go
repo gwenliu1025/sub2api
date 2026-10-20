@@ -65,3 +65,42 @@ func TestUnixUpdateAgentClientRejectsUnexpectedTargetRepository(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "UPDATE_TARGET_REPOSITORY_MISMATCH")
 }
+
+func TestUnixUpdateAgentClientPreservesForkRevisionAndRejectsWrongTarget(t *testing.T) {
+	// 代理必须确认完整标签；同仓库返回三段或另一修复号也不算准备成功。
+	for _, target := range []string{
+		"ghcr.io/gwenliu1025/sub2api:0.2.17.1",
+		"ghcr.io/gwenliu1025/sub2api:0.2.17",
+		"ghcr.io/gwenliu1025/sub2api:0.2.17.2",
+		"ghcr.io/other/sub2api:0.2.17.1",
+	} {
+		t.Run(target, func(t *testing.T) {
+			client := &UnixUpdateAgentClient{
+				httpClient: &http.Client{Transport: updateAgentRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+					require.Equal(t, http.MethodPost, r.Method)
+					require.Equal(t, "http://unix/v1/prepare", r.URL.String())
+					var request struct {
+						Version string `json:"version"`
+					}
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					require.Equal(t, "0.2.17.1", request.Version)
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"state":"prepared","target_image":"` + target + `"}`)),
+						Header:     make(http.Header),
+					}, nil
+				})},
+				expectedRepository: "ghcr.io/gwenliu1025/sub2api",
+			}
+			status, err := client.Prepare(t.Context(), " v0.2.17.1 ")
+			if target == "ghcr.io/gwenliu1025/sub2api:0.2.17.1" {
+				require.NoError(t, err)
+				require.Equal(t, target, status.TargetImage)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "UPDATE_TARGET_REPOSITORY_MISMATCH")
+				require.Nil(t, status)
+			}
+		})
+	}
+}

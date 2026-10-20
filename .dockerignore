@@ -73,9 +73,6 @@ deploy/data/
 deploy/postgres_data/
 deploy/redis_data/
 
-# GoReleaser
-.goreleaser.yaml
-
 # GitHub
 .github/
 

@@ -15,7 +15,7 @@ fail() {
 root="$(git rev-parse --show-toplevel)"
 [[ "$(git rev-parse HEAD)" == "$commit" ]] || fail '当前源码提交不匹配'
 
-# GoReleaser 的初始 Git 检查早于 before hook；此处必须检查构建后的真实状态。
+# 发布执行器的初始 Git 检查早于依赖验证；此处必须检查构建后的真实状态。
 status="$(git status --porcelain)"
 [[ -z "$status" ]] || fail "构建改变了工作树：$status"
 info="$(go version -m "$binary")"
@@ -37,5 +37,5 @@ require_build_setting CGO_ENABLED 0
 require_build_setting -tags embed
 grep -Eq "(^|[[:space:]])main.Commit=$commit([[:space:]]|\")" <<< "$info" || fail '应用提交不匹配'
 
-# 每个目标都经过 post hook 后才进入归档和发布，任何失败都由 GoReleaser 中止。
+# 发布执行器逐个目标调用本门禁后才归档；任一验收失败即停止发布。
 printf '发布二进制验收通过：%s/%s %s\n' "$target_os" "$target_arch" "$commit"

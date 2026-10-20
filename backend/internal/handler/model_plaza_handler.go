@@ -36,7 +36,8 @@ func NewModelPlazaHandler(
 	}
 }
 
-// modelPlazaOfficialPricing 官方参考价（USD per token，与计费目录同源）。
+// modelPlazaOfficialPricing 广场官方参考价，单位为站内记账单位每 token。
+// 国模人民币参考与销售定价独立，其余模型沿用计费目录。
 type modelPlazaOfficialPricing struct {
 	InputPrice        *float64 `json:"input_price"`
 	OutputPrice       *float64 `json:"output_price"`

@@ -34,19 +34,20 @@ require_absent() {
 }
 
 workflow=".github/workflows/release.yml"
-goreleaser=".goreleaser.yaml"
+executor=".github/scripts/release.py"
 version_file="backend/cmd/server/VERSION"
 compose_files="deploy/docker-compose.yml deploy/docker-compose.local.yml deploy/docker-compose.standalone.yml"
 
 require_file "$workflow"
-require_file "$goreleaser"
+require_file "$executor"
+[[ ! -e .goreleaser.yaml ]] || fail "obsolete release owner still present"
 require_file "$version_file"
 require_file ".github/scripts/validate-release-version.sh"
 require_contains ".github/workflows/backend-ci.yml" '.github/scripts/test-validate-release-version.sh'
 require_contains ".github/workflows/backend-ci.yml" '.github/scripts/test-release-policy.sh'
 
-require_exact_line "$version_file" "0.2.17"
-require_exact_line "deploy/.env.example" "SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.17"
+require_exact_line "$version_file" "0.2.17.1"
+require_exact_line "deploy/.env.example" "SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.17.1"
 require_contains "$workflow" 'tags:'
 require_contains "$workflow" '"v*"'
 require_contains "$workflow" 'workflow_dispatch:'
@@ -80,50 +81,57 @@ require_absent "frontend/src/components/common/VersionBadge.vue" 'Wei-Shaw/sub2a
 require_absent "frontend/src/components/common/VersionBadge.vue" 'weishaw/sub2api'
 require_exact_line "deploy/install.sh" 'GITHUB_REPO="gwenliu1025/sub2api"'
 require_absent "deploy/install.sh" 'Wei-Shaw/sub2api'
-require_contains "deploy/docker-deploy.sh" 'https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.17/deploy'
+require_contains "deploy/docker-deploy.sh" 'https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.17.1/deploy'
 require_absent "deploy/docker-deploy.sh" 'Wei-Shaw/sub2api'
-require_exact_line "deploy/.env.example" 'APPLE_CONTAINER_SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.17'
-require_contains "deploy/apple-container.sh" 'ghcr.io/gwenliu1025/sub2api:0.2.17'
+require_exact_line "deploy/.env.example" 'APPLE_CONTAINER_SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.17.1'
+require_contains "deploy/apple-container.sh" 'ghcr.io/gwenliu1025/sub2api:0.2.17.1'
 require_absent "deploy/apple-container.sh" 'weishaw/sub2api:latest'
 
-require_exact_line "deploy/docker-deploy.sh" 'GITHUB_RAW_URL="https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.17/deploy"'
+require_exact_line "deploy/docker-deploy.sh" 'GITHUB_RAW_URL="https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.17.1/deploy"'
 for release_doc in deploy/README.md deploy/DOCKER.md deploy/APPLE_CONTAINER.md; do
   require_absent "$release_doc" 'Wei-Shaw/sub2api'
   require_absent "$release_doc" 'weishaw/sub2api'
   require_absent "$release_doc" 'sub2api:latest'
-  require_contains "$release_doc" 'ghcr.io/gwenliu1025/sub2api:0.2.17'
+  require_contains "$release_doc" 'ghcr.io/gwenliu1025/sub2api:0.2.17.1'
 done
 
-require_absent "$goreleaser" 'dockers:'
-require_absent "$goreleaser" 'docker_manifests:'
-require_absent "$goreleaser" ':latest'
-require_absent "$goreleaser" ':{{ .Major }}'
-require_absent "$goreleaser" ':{{ .Major }}.{{ .Minor }}'
-require_absent "$goreleaser" '-amd64'
-require_absent "$goreleaser" '-arm64'
-require_contains "$goreleaser" '      - linux'
-require_contains "$goreleaser" '      - windows'
-require_contains "$goreleaser" '      - darwin'
-require_contains "$goreleaser" '      - amd64'
-require_contains "$goreleaser" '      - arm64'
-require_contains "$goreleaser" 'goos: windows'
-require_contains "$goreleaser" 'formats: [tar.gz]'
-require_contains "$goreleaser" 'formats: [zip]'
-require_contains "$goreleaser" 'name_template: checksums.txt'
-require_contains "$goreleaser" '> AI API 网关平台'
-require_contains "$goreleaser" '## 文档'
+# 五平台、格式、归档成员、字节和不覆盖语义由执行器真实函数测试持有。
+require_contains ".github/workflows/backend-ci.yml" 'python3 -B .github/scripts/test_release.py'
+require_contains ".github/workflows/backend-ci.yml" '/bin/bash deploy/tests/install-version-test.sh'
+# 发布执行器只读检查镜像；拒绝实际 Python argv 形状的镜像写命令。
+require_absent "$executor" '["docker", "build"'
+require_absent "$executor" '["docker", "buildx", "build"'
+require_absent "$executor" '["docker", "push"'
+require_absent "$executor" '["docker", "image", "build"'
+require_absent "$executor" '["docker", "image", "push"'
+require_absent "$executor" '["docker", "manifest", "create"'
+require_absent "$executor" '["docker", "manifest", "push"'
+require_absent "$executor" '["docker", "buildx", "imagetools", "create"'
+require_absent "$executor" ':latest'
+require_absent "$executor" ':{{ .Major }}'
+require_absent "$executor" ':{{ .Major }}.{{ .Minor }}'
+require_absent "$executor" '-amd64'
+require_absent "$executor" '-arm64'
+require_contains "$executor" 'checksums.txt'
+require_contains "$executor" '> AI API 网关平台'
+require_contains "$executor" '## 文档'
+require_contains "$executor" '--verify-tag'
+require_absent "$executor" '--clobber'
+require_absent "$workflow" 'goreleaser-action'
+require_contains "$workflow" 'python3 -B .github/scripts/release.py --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --preflight-only'
+require_contains "$executor" '"--latest"'
 
-# 来源验收属于发布前的构建门，既不能关闭，也不能只检查启动时的 Git 快照。
+# 保留原逐二进制门禁及全部13个正反例；只迁移执行器调用方式。
 gate=".github/scripts/verify-release-binary.sh"
 require_file "$gate"
-require_contains "$goreleaser" '    - go -C backend mod verify'
-require_absent "$goreleaser" 'go mod tidy'
-require_contains "$goreleaser" '      - -mod=readonly'
-require_contains "$goreleaser" "        - cmd: bash $gate '{{ .Path }}' '{{ .FullCommit }}' '{{ .Os }}' '{{ .Arch }}'"
-require_contains "$workflow" '          args: release --clean'
+require_contains "$executor" '["go", "-C", "backend", "mod", "verify"]'
+require_absent "$executor" 'go mod tidy'
+require_contains "$executor" '"-mod=readonly"'
+require_contains "$executor" '["bash", ".github/scripts/verify-release-binary.sh", str(binary), commit, target_os, arch]'
+require_contains "$workflow" 'python3 -B .github/scripts/release.py --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --publish'
 require_absent "$workflow" '--skip=validate'
 require_absent "$workflow" '--skip=hooks'
-require_absent "$goreleaser" '-buildvcs=false'
+require_absent "$executor" '-buildvcs=false'
 
 # 隔离工具输出验证正反例，不改真实源码、依赖或 Git 状态。
 fixture_dir="$(mktemp -d)"
@@ -173,7 +181,7 @@ check_gate_case missing_embed fail "${fixture_info/-tags=embed/-tags=unit}"
 check_gate_case buildinfo_failure fail "$fixture_info" '' "$fixture_commit" 7
 
 for compose in $compose_files; do
-  require_contains "$compose" 'image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.17}'
+  require_contains "$compose" 'image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.17.1}'
   require_absent "$compose" 'weishaw/sub2api:latest'
 done
 

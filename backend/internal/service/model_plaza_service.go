@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// PlazaOfficialPricing 模型广场展示用的官方参考价（USD per token），与计费同源：
-// LiteLLM → 内置兜底价卡 → 模型策略。字段为 nil 表示该项缺失（0 视为未配置）。
+// PlazaOfficialPricing 模型广场展示用的官方参考价（站内记账单位 per token）：
+// 明确采用的国模使用人民币同数值参考，其余沿用计费目录。字段为 nil 表示缺项。
 type PlazaOfficialPricing struct {
 	InputPrice        *float64
 	OutputPrice       *float64
@@ -172,6 +172,10 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 			}
 			for j := range supported {
 				m := supported[j]
+				// 复用网关准入规则，避免展示分组已禁止调用的模型。
+				if !groupEnt[gid].ModelAllowlist.Allows(m.Name) {
+					continue
+				}
 				if pg.Platform == PlatformComposite {
 					if !isConcreteRequestPlatform(m.Platform) {
 						continue
@@ -339,15 +343,18 @@ func plazaImageDisplayPricing(p *ChannelModelPricing, g *Group) *ChannelModelPri
 	return &clone
 }
 
-// lookupOfficialPricing 查询模型的官方参考价（与计费同源：LiteLLM → 内置兜底 → 模型策略），
-// 带 memo 避免同名模型重复解析。官方阶梯按无分组、无渠道的口径查阶梯表。
-// billingService 为 nil（测试场景）或查不到时返回 nil。
+// lookupOfficialPricing 优先查询广场专用的国模人民币参考，其余沿用计费目录。
+// memo 仅存活于单次列表请求；官方值不取分组或渠道销售价，也不反写计费目录。
 func (s *ModelPlazaService) lookupOfficialPricing(ctx context.Context, modelName string, memo map[string]*PlazaOfficialPricing) *PlazaOfficialPricing {
-	if s.billingService == nil {
-		return nil
-	}
 	if cached, ok := memo[modelName]; ok {
 		return cached
+	}
+	if reference := plazaRMBOfficialPricing(modelName); reference != nil {
+		memo[modelName] = reference
+		return reference
+	}
+	if s.billingService == nil {
+		return nil
 	}
 	var result *PlazaOfficialPricing
 	if mp, err := s.billingService.GetModelPricing(modelName); err == nil && mp != nil {

@@ -1,13 +1,16 @@
 /**
  * Model Plaza API（公开端点，可匿名访问）
- * 以分组为中心的模型价目：分组信息 + 模型渠道定价 + LiteLLM 官方参考价。
+ * 以分组为中心的模型价目：分组信息 + 模型渠道定价 + 广场官方参考价。
  * 带 token 请求时后端会额外返回专属分组与用户专属倍率。
  */
 
 import { apiClient } from './client'
 import type { UserPricingInterval, UserSupportedModelPricing } from './channels'
 
-/** 官方参考价（USD per token，与计费目录同源；字段缺失 = 目录未覆盖）。 */
+/**
+ * 官方参考价，单位为站内记账单位每 token；字段缺失表示无对应参考。
+ * 国模人民币参考与销售定价独立，其余模型沿用计费目录。
+ */
 export interface PlazaOfficialPricing {
   input_price: number | null
   output_price: number | null
