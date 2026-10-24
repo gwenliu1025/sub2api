@@ -46,8 +46,8 @@ require_file ".github/scripts/validate-release-version.sh"
 require_contains ".github/workflows/backend-ci.yml" '.github/scripts/test-validate-release-version.sh'
 require_contains ".github/workflows/backend-ci.yml" '.github/scripts/test-release-policy.sh'
 
-require_exact_line "$version_file" "0.2.17.1"
-require_exact_line "deploy/.env.example" "SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.17.1"
+require_exact_line "$version_file" "0.2.18"
+require_exact_line "deploy/.env.example" "SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.18"
 require_contains "$workflow" 'tags:'
 require_contains "$workflow" '"v*"'
 require_contains "$workflow" 'workflow_dispatch:'
@@ -81,18 +81,18 @@ require_absent "frontend/src/components/common/VersionBadge.vue" 'Wei-Shaw/sub2a
 require_absent "frontend/src/components/common/VersionBadge.vue" 'weishaw/sub2api'
 require_exact_line "deploy/install.sh" 'GITHUB_REPO="gwenliu1025/sub2api"'
 require_absent "deploy/install.sh" 'Wei-Shaw/sub2api'
-require_contains "deploy/docker-deploy.sh" 'https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.17.1/deploy'
+require_contains "deploy/docker-deploy.sh" 'https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.18/deploy'
 require_absent "deploy/docker-deploy.sh" 'Wei-Shaw/sub2api'
-require_exact_line "deploy/.env.example" 'APPLE_CONTAINER_SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.17.1'
-require_contains "deploy/apple-container.sh" 'ghcr.io/gwenliu1025/sub2api:0.2.17.1'
+require_exact_line "deploy/.env.example" 'APPLE_CONTAINER_SUB2API_IMAGE=ghcr.io/gwenliu1025/sub2api:0.2.18'
+require_contains "deploy/apple-container.sh" 'ghcr.io/gwenliu1025/sub2api:0.2.18'
 require_absent "deploy/apple-container.sh" 'weishaw/sub2api:latest'
 
-require_exact_line "deploy/docker-deploy.sh" 'GITHUB_RAW_URL="https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.17.1/deploy"'
+require_exact_line "deploy/docker-deploy.sh" 'GITHUB_RAW_URL="https://raw.githubusercontent.com/gwenliu1025/sub2api/v0.2.18/deploy"'
 for release_doc in deploy/README.md deploy/DOCKER.md deploy/APPLE_CONTAINER.md; do
   require_absent "$release_doc" 'Wei-Shaw/sub2api'
   require_absent "$release_doc" 'weishaw/sub2api'
   require_absent "$release_doc" 'sub2api:latest'
-  require_contains "$release_doc" 'ghcr.io/gwenliu1025/sub2api:0.2.17.1'
+  require_contains "$release_doc" 'ghcr.io/gwenliu1025/sub2api:0.2.18'
 done
 
 # 五平台、格式、归档成员、字节和不覆盖语义由执行器真实函数测试持有。
@@ -181,7 +181,7 @@ check_gate_case missing_embed fail "${fixture_info/-tags=embed/-tags=unit}"
 check_gate_case buildinfo_failure fail "$fixture_info" '' "$fixture_commit" 7
 
 for compose in $compose_files; do
-  require_contains "$compose" 'image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.17.1}'
+  require_contains "$compose" 'image: ${SUB2API_IMAGE:-ghcr.io/gwenliu1025/sub2api:0.2.18}'
   require_absent "$compose" 'weishaw/sub2api:latest'
 done
 
