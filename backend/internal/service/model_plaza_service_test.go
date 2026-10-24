@@ -706,3 +706,154 @@ func TestPlazaRMBReferenceDoesNotSupplyMissingBillingPrice(t *testing.T) {
 		})
 	}
 }
+
+func TestPlazaRMBOfficialPricing_KimiK31ProFiveMinuteReference(t *testing.T) {
+	model := "kimi-k3.1-pro"
+	got := plazaRMBOfficialPricing(model)
+	require.NotNil(t, got)
+	for _, price := range []*float64{got.InputPrice, got.OutputPrice, got.CacheReadPrice, got.CacheWritePrice} {
+		require.NotNil(t, price)
+	}
+	require.InDelta(t, 13e-6, *got.InputPrice, 1e-15)
+	require.InDelta(t, 68e-6, *got.OutputPrice, 1e-15)
+	require.InDelta(t, 1.30e-6, *got.CacheReadPrice, 1e-15)
+	require.InDelta(t, 13e-6, *got.CacheWritePrice, 1e-15)
+	require.Nil(t, got.CacheWrite1hPrice, "本轮没有采用1h分桶计费，不展示其价格")
+	require.Empty(t, got.Intervals)
+	svc := newPlazaServiceWithBilling(nil, nil, nil, nil)
+	require.Equal(t, got, svc.lookupOfficialPricing(context.Background(), model, make(map[string]*PlazaOfficialPricing)))
+
+	independent := plazaRMBOfficialPricing(model)
+	require.NotSame(t, got, independent)
+	require.NotSame(t, got.InputPrice, independent.InputPrice)
+	require.NotSame(t, got.CacheWritePrice, independent.CacheWritePrice)
+	*got.InputPrice, *got.OutputPrice, *got.CacheReadPrice, *got.CacheWritePrice = 999, 999, 999, 999
+	require.InDelta(t, 13e-6, *independent.InputPrice, 1e-15)
+	require.InDelta(t, 68e-6, *independent.OutputPrice, 1e-15)
+	require.InDelta(t, 1.30e-6, *independent.CacheReadPrice, 1e-15)
+	require.InDelta(t, 13e-6, *independent.CacheWritePrice, 1e-15)
+	for _, unmatched := range []string{"kimi-k3.1-pro-highspeed", "KIMI-K3.1-PRO", " kimi-k3.1-pro", "kimi-k3.1-pro-extra", "kimi-k3.1"} {
+		t.Run(unmatched, func(t *testing.T) { require.Nil(t, plazaRMBOfficialPricing(unmatched)) })
+	}
+}
+
+func TestListPlazaGroups_KimiK31ProUsesExistingAllowlist(t *testing.T) {
+	model := "kimi-k3.1-pro"
+	oldModels := []string{"kimi-k3", "glm-5.3", "glm-5.3-flash"}
+	allModels := append(append([]string(nil), oldModels...), model)
+	for _, enabled := range []bool{false, true} {
+		name := "before_allowlist_update"
+		if enabled {
+			name = "after_allowlist_update"
+		}
+		t.Run(name, func(t *testing.T) {
+			allowed := append([]string(nil), oldModels...)
+			if enabled {
+				allowed = append(allowed, model)
+			}
+			ch := plazaPricedChannel(3, "国模统一定价", []int64{129, 136}, PlatformOpenAI, allModels...)
+			groups := []Group{
+				{ID: 129, Platform: PlatformOpenAI, RateMultiplier: 0.12},
+				{ID: 136, Platform: PlatformOpenAI, RateMultiplier: 0.08,
+					ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: allowed}},
+			}
+			got, err := newPlazaService([]Channel{ch}, groups, nil).ListGroups(context.Background())
+			require.NoError(t, err)
+			require.Len(t, got, 2)
+			for _, group := range got {
+				models := plazaModelsByName(group.Models)
+				if group.ID == 129 {
+					// 共享价卡会进入未启用白名单组的广场枚举，不据此证明账号可调用。
+					require.Len(t, models, len(allModels))
+					require.Contains(t, models, model)
+					continue
+				}
+				require.Equal(t, int64(136), group.ID)
+				require.Len(t, models, len(allowed))
+				for _, oldModel := range oldModels {
+					require.Contains(t, models, oldModel)
+				}
+				if enabled {
+					require.Contains(t, models, model)
+					require.NotNil(t, models[model].OfficialPricing)
+					require.InDelta(t, 68e-6, *models[model].OfficialPricing.OutputPrice, 1e-15)
+				} else {
+					require.NotContains(t, models, model)
+				}
+			}
+		})
+	}
+}
+
+func TestListPlazaGroups_KimiK31ProReferenceIndependentOfSalesAndRequests(t *testing.T) {
+	ctx := context.Background()
+	model := "kimi-k3.1-pro"
+	ch := plazaPricedChannel(3, "国模统一定价", []int64{129, 136}, PlatformOpenAI, model)
+	// 刻意使用不同销售夹具，防止参考价从销售单价或分组倍率反推。
+	ch.ModelPricing[0].CacheReadPrice = testPtrFloat64(0.4e-6)
+	ch.ModelPricing[0].CacheWritePrice = testPtrFloat64(6e-6)
+	groups := []Group{
+		{ID: 129, Platform: PlatformOpenAI, RateMultiplier: 0.12, ModelPricing: []ChannelModelPricing{{
+			Models: []string{model}, BillingMode: BillingModeToken,
+			InputPrice: testPtrFloat64(9e-6), OutputPrice: testPtrFloat64(33e-6),
+			CacheReadPrice: testPtrFloat64(2e-6), CacheWritePrice: testPtrFloat64(11e-6),
+		}}},
+		{ID: 136, Platform: PlatformOpenAI, RateMultiplier: 0.08,
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{model}}},
+	}
+	svc := newPlazaServiceWithBilling([]Channel{ch}, groups, map[int64]string{129: PlatformOpenAI, 136: PlatformOpenAI}, nil)
+	configBefore, err := json.Marshal([]any{ch.ModelPricing, groups})
+	require.NoError(t, err)
+	inputs := make(map[int64]CostInput)
+	before := make(map[int64]*CostBreakdown)
+	for i := range groups {
+		group := &groups[i]
+		in := CostInput{Ctx: ctx, Model: model, GroupID: &group.ID, Group: group,
+			Tokens:         UsageTokens{InputTokens: 1000, OutputTokens: 2000, CacheReadTokens: 500, CacheCreationTokens: 600},
+			RateMultiplier: group.RateMultiplier, Resolver: svc.resolver,
+			PricingAt: time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)}
+		cost, err := svc.billingService.CalculateCostUnified(in)
+		require.NoError(t, err)
+		inputs[group.ID], before[group.ID] = in, cost
+	}
+	require.InDelta(t, (0.009+0.066+0.001+0.0066)*0.12, before[129].ActualCost, 1e-15)
+	require.InDelta(t, (0.003+0.03+0.0002+0.0036)*0.08, before[136].ActualCost, 1e-15)
+
+	got, err := svc.ListGroups(ctx)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	for _, group := range got {
+		require.Len(t, group.Models, 1)
+		entry := group.Models[0]
+		require.NotNil(t, entry.Pricing)
+		require.NotNil(t, entry.OfficialPricing)
+		require.InDelta(t, 13e-6, *entry.OfficialPricing.InputPrice, 1e-15)
+		require.InDelta(t, 68e-6, *entry.OfficialPricing.OutputPrice, 1e-15)
+		require.InDelta(t, 1.30e-6, *entry.OfficialPricing.CacheReadPrice, 1e-15)
+		require.InDelta(t, 13e-6, *entry.OfficialPricing.CacheWritePrice, 1e-15)
+		require.Nil(t, entry.OfficialPricing.CacheWrite1hPrice)
+		require.Empty(t, entry.OfficialPricing.Intervals)
+		require.Nil(t, entry.TimePricing)
+		require.Empty(t, entry.Pricing.ReasoningEffortMultipliers)
+		after, err := svc.billingService.CalculateCostUnified(inputs[group.ID])
+		require.NoError(t, err)
+		require.Equal(t, before[group.ID], after, "读取参考不改普通输入、读取、默认写入或输出的计费")
+	}
+	configAfter, err := json.Marshal([]any{ch.ModelPricing, groups})
+	require.NoError(t, err)
+	require.Equal(t, configBefore, configAfter, "官方参考不得改写销售或分组配置")
+
+	// 同一请求内允许memo复用；下一次请求必须构造独立参考字段。
+	first := got[0].Models[0].OfficialPricing
+	*first.InputPrice, *first.CacheWritePrice = 999, 999
+	next, err := svc.ListGroups(ctx)
+	require.NoError(t, err)
+	require.Len(t, next, 2)
+	for _, group := range next {
+		reference := group.Models[0].OfficialPricing
+		require.NotSame(t, first, reference)
+		require.InDelta(t, 13e-6, *reference.InputPrice, 1e-15)
+		require.InDelta(t, 13e-6, *reference.CacheWritePrice, 1e-15)
+		require.Nil(t, reference.CacheWrite1hPrice)
+	}
+}

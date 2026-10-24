@@ -21,6 +21,8 @@ func plazaRMBOfficialPricing(model string) *PlazaOfficialPricing {
 		input, output, cacheRead = 0.8, 2.8, 0.23
 	case "kimi-k3":
 		input, output, cacheRead = 20, 100, 2
+	case "kimi-k3.1-pro":
+		input, output, cacheRead = 13, 68, 1.30
 	case "minimax-m3":
 		input, output, cacheRead = 2.1, 8.4, 0.42
 	case "hy3":
@@ -34,6 +36,11 @@ func plazaRMBOfficialPricing(model string) *PlazaOfficialPricing {
 		InputPrice:     nonZeroPtr(input / 1_000_000),
 		OutputPrice:    nonZeroPtr(output / 1_000_000),
 		CacheReadPrice: nonZeroPtr(cacheRead / 1_000_000),
+	}
+	if model == "kimi-k3.1-pro" {
+		// 2026-10-24 来源：https://platform.kimi.com/docs/pricing/chat。
+		// 仅采用默认5m写价；1h计量未接入，参考字段保持nil，不借展示扩展计费。
+		reference.CacheWritePrice = nonZeroPtr(13e-6)
 	}
 	if model == "minimax-m3" {
 		// 区间契约为左开右闭，512000 token 仍属于第一档；与分组阶梯开关无关。
